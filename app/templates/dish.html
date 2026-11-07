@@ -1,0 +1,127 @@
+{% extends "_event.html" %}
+{% from "_macros.html" import csrf, diet_chips, thumb %}
+{% block event %}
+<p><a href="{{ url_for('host.menu', event_id=ev.id) }}">← Menu</a></p>
+<form method="post" id="dishform">{{ csrf() }}
+<div class="grid side">
+  <div class="card">
+    <div class="dish" style="border:0;padding-top:0">
+      {{ thumb(d, mealie_public) }}
+      <div>
+        {% if d.mealie_id %}
+          <h2 style="margin:0">{{ d.name }}</h2>
+          <div class="meta"><a href="{{ recipe_base }}{{ d.mealie_slug }}" target="_blank" rel="noopener">Open in Mealie</a>{% if d.recipe_servings %} · makes {{ d.recipe_servings|qty }} servings{% endif %}</div>
+        {% else %}
+          <div class="field" style="margin:0"><label for="dn">Dish</label><input id="dn" name="name" value="{{ d.name }}"></div>
+        {% endif %}
+      </div>
+    </div>
+
+    <h3>Kitchen steps</h3>
+    {% if d.mealie_id %}
+    <p class="muted">One row per step that has a time in Mealie. Times come from Mealie: change them there, then use “Refresh from Mealie” on the menu. Mealie can't hold an appliance or temperature yet, so set those here; Gravy Boat remembers them for {{ d.name }}. Guessed ones are pre-filled from the step text.</p>
+    {% if not d.steps %}<div class="flash warn">None of this recipe's steps have a time in Mealie yet, so it's not on the timeline. <a href="{{ recipe_base }}{{ d.mealie_slug }}" target="_blank" rel="noopener">Add step times in Mealie</a>.</div>{% endif %}
+    {% else %}
+    <p class="muted">Steps run in order and the last one ends when the dish is ready. Use a “Rest” step with no appliance for resting or cooling.</p>
+    {% endif %}
+    {% if not apps %}<div class="flash warn">You haven't set up any appliances yet. <a href="{{ url_for('host.kitchen') }}">Add them</a> to choose where each step cooks.</div>{% endif %}
+    <div class="steps" id="steps">
+      <div class="step-row step-head" aria-hidden="true"><span>#</span><span>Step</span><span>Minutes</span><span>Where</span><span>{{ deg }}</span><span>Hands-on</span></div>
+      {% set rows = d.steps|list %}
+      {% set extra = 0 if d.mealie_id else 2 %}
+      {% for i in range(rows|length + extra) %}
+      {% set s = rows[i] if i < rows|length else none %}
+      <div class="step-row">
+        {% if s and s.source_id %}<input type="hidden" name="s{{ i }}_source" value="{{ s.source_id }}">{% endif %}
+        <label class="c-seq"><span class="m">Order</span><input name="s{{ i }}_seq" value="{{ i }}" inputmode="numeric"></label>
+        <label class="c-label"><span class="m">Step</span><input name="s{{ i }}_label" value="{{ s.label if s else '' }}" placeholder="{{ ['Prep','Bake','Rest'][i] if i < 3 and not rows else 'Add a step' }}"></label>
+        <label class="c-min"><span class="m">Minutes</span>{% if s and s.source_id %}<input value="{{ s.minutes }}" readonly title="From Mealie" aria-label="Minutes (from Mealie)" style="background:var(--surface-2)">{% else %}<input name="s{{ i }}_minutes" value="{{ s.minutes if s else '' }}" inputmode="numeric">{% endif %}</label>
+        <label class="c-where"><span class="m">Where</span>
+          <select name="s{{ i }}_where">
+            <option value="">Counter / resting</option>
+            <optgroup label="Any free…">
+              {% for k, name in APPLIANCE_KINDS.items() %}<option value="{{ k }}" {{ 'selected' if s and s.kind == k and not s.appliance_id }}>{{ name }}</option>{% endfor %}
+            </optgroup>
+            {% if apps %}<optgroup label="Exactly this one">
+              {% for a in apps %}<option value="app:{{ a.id }}" {{ 'selected' if s and s.appliance_id == a.id }}>{{ a.name }}</option>{% endfor %}
+            </optgroup>{% endif %}
+          </select>
+        </label>
+        <label class="c-temp"><span class="m">{{ deg }}</span><input name="s{{ i }}_temp" value="{{ s.temp if s and s.temp else '' }}" inputmode="numeric"></label>
+        <label class="c-hands"><input type="checkbox" name="s{{ i }}_hands" value="1" {{ 'checked' if s and s.hands_on }}> <span class="m">Hands-on</span></label>
+      </div>
+      {% endfor %}
+    </div>
+    <input type="hidden" name="step_count" value="{{ d.steps|length + (0 if d.mealie_id else 2) }}">
+    {% if not d.mealie_id %}<p class="muted">Two blank rows are added each time you save. Clear a step's name to remove it.</p>{% endif %}
+
+    <div class="row" style="margin-top:1rem">
+      <div class="field"><label>Ready</label>
+        <select name="ready_at">
+          {% for v, l in [(-60,'1 hour before serving'),(-30,'30 min before serving'),(-15,'15 min before serving'),(0,'At serving time'),(30,'30 min after serving'),(60,'1 hour after serving'),(90,'90 min after serving'),(120,'2 hours after serving')] %}
+          <option value="{{ v }}" {{ 'selected' if d.ready_at == v }}>{{ l }}</option>
+          {% endfor %}
+          {% if d.ready_at not in [-60,-30,-15,0,30,60,90,120] %}<option value="{{ d.ready_at }}" selected>{{ d.ready_at }} min from serving</option>{% endif %}
+        </select>
+      </div>
+      <div class="field"><label>Can wait up to (min)</label><input name="max_hold" value="{{ d.max_hold if d.max_hold is not none else '' }}" inputmode="numeric"></div>
+    </div>
+    <p class="muted">“Can wait” is how long the finished dish can sit covered before serving. More slack makes the oven easier to share.</p>
+  </div>
+
+  <div>
+    <div class="card">
+      <div class="row">
+        <div class="field"><label>Course</label><select name="course">{% for c in courses %}<option {{ 'selected' if d.course == c }}>{{ c }}</option>{% endfor %}</select></div>
+        <div class="field"><label>Who</label><select name="bringer">
+          <option value="host" {{ 'selected' if d.bringer == 'host' }}>Host</option>
+          <option value="open" {{ 'selected' if d.bringer == 'open' }}>Needs someone</option>
+          {% for gst in ev.guests %}<option value="guest:{{ gst.id }}" {{ 'selected' if d.bringer == 'guest' and d.bringer_guest_id == gst.id }}>{{ gst.name }}</option>{% endfor %}
+        </select></div>
+      </div>
+      {% if d.bringer != 'host' %}
+      <div class="field" style="margin-top:.85rem"><label>Arrives at</label><input type="time" step="300" name="arrive_time" value="{{ d.arrive_time.strftime('%H:%M') if d.arrive_time else '' }}"></div>
+      {% endif %}
+      {% if d.mealie_id %}
+      <div class="field" style="margin-top:.85rem"><label>Batches</label>
+        <input name="scale" value="{{ d.scale|qty if d.scale is not none else '' }}" placeholder="Auto: ×{{ auto_scale|qty }} for {{ ev.headcount|qty }} servings" inputmode="decimal">
+        <small>Multiplier for the shopping list. Leave blank to size it to the headcount.</small>
+      </div>
+      {% endif %}
+      <div class="field" style="margin-top:.85rem"><label>Serving dish / utensils</label><input name="serveware" value="{{ d.serveware }}" placeholder="Blue platter, carving fork"></div>
+      <div class="field"><label>Notes</label><textarea name="notes">{{ d.notes }}</textarea></div>
+    </div>
+
+    <div class="card" style="margin-top:1rem">
+      <h3>Dietary</h3>
+      {% if d.mealie_id %}
+        {% if all_flags %}
+        <ul class="plain">{% for f in all_flags %}{% set st = status(d, f) %}<li class="li-row"><span>{{ f.name }}</span><span class="chip {{ st }}">{{ st }}</span></li>{% endfor %}</ul>
+        <p class="muted">From the recipe's Mealie tags: {{ d.mealie_tags|join(', ') or 'none' }}.</p>
+        {% else %}<p class="muted">No dietary flags set up.</p>{% endif %}
+      {% else %}
+        {% for f in all_flags %}
+        {% set cur = (d.diet or {}).get(f.id|string, '') %}
+        <div class="field"><label>{{ f.name }}</label>
+          <select name="diet_{{ f.id }}"><option value="">Don't know</option>{% for v, l in [('safe','Safe'),('caution','Can be adjusted'),('unsafe','Not safe')] %}<option value="{{ v }}" {{ 'selected' if cur == v }}>{{ l }}</option>{% endfor %}</select>
+        </div>
+        {% else %}<p class="muted">No dietary flags set up.</p>{% endfor %}
+      {% endif %}
+    </div>
+
+    {% if d.mealie_tools %}
+    <div class="card" style="margin-top:1rem">
+      <h3>Cookware (from Mealie)</h3>
+      <div class="chips">{% for t in d.mealie_tools %}<span class="chip">{{ t }}</span>{% endfor %}</div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+<div class="actions" style="margin-top:1rem">
+  <button>Save</button>
+  <button name="then" value="timeline" class="ghost">Save and see timeline</button>
+  <span class="spacer" style="flex:1"></span>
+  <button name="action" value="delete" class="danger" formnovalidate>Remove from menu</button>
+</div>
+</form>
+{% endblock %}

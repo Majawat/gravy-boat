@@ -1,0 +1,65 @@
+{% extends "_event.html" %}
+{% from "_macros.html" import csrf %}
+{% block event %}
+<div class="grid side">
+  <div>
+    {% for name, tasks in buckets %}
+    <div class="card" style="margin-bottom:1rem">
+      <h2 style="margin-top:0">{{ name }}</h2>
+      <ul class="plain">
+        {% for t, on in tasks %}
+        <li class="li-row">
+          <form method="post" class="inline" style="flex:1">{{ csrf() }}
+            <input type="hidden" name="task_id" value="{{ t.id }}">
+            <label style="display:flex;gap:.6rem;align-items:center;font-weight:400;margin:0;cursor:pointer">
+              <input type="checkbox" {{ 'checked' if t.done }} onchange="this.form.submit()" aria-label="Done">
+              <input type="hidden" name="action" value="toggle">
+              <span class="{{ 'done' if t.done }}">{{ t.label }}{% if t.dish %} <span class="chip">{{ t.dish.name }}</span>{% endif %}</span>
+            </label>
+          </form>
+          <span class="muted">{{ on.strftime('%a %b %-d') }}{% if t.days_before %} · {{ t.days_before }} day{{ 's' if t.days_before != 1 }} before{% endif %}</span>
+          <form method="post" class="inline">{{ csrf() }}<input type="hidden" name="task_id" value="{{ t.id }}"><button name="action" value="delete" class="link" aria-label="Delete task">remove</button></form>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% else %}
+    <div class="card"><p class="muted">No prep tasks yet. Add things like thawing the turkey, making the brine, baking pies the day before, or setting the table.</p></div>
+    {% endfor %}
+  </div>
+  <div>
+    <div class="card">
+      <h2>Add a task</h2>
+      <form method="post">{{ csrf() }}
+        <input type="hidden" name="action" value="add">
+        <div class="field"><label>Task</label><input name="label" placeholder="Make the brine and refrigerate" required></div>
+        <div class="row">
+          <div class="field"><label>Days before</label><input name="days_before" inputmode="numeric" value="1"></div>
+          <div class="field"><label>or on</label><input type="date" name="when" max="{{ ev.date.isoformat() }}"></div>
+        </div>
+        <div class="field" style="margin-top:.85rem"><label>For dish (optional)</label>
+          <select name="dish_id"><option value="">—</option>{% for d in ev.dishes %}<option value="{{ d.id }}">{{ d.name }}</option>{% endfor %}</select>
+        </div>
+        <button>Add</button>
+      </form>
+    </div>
+    <div class="card" style="margin-top:1rem">
+      <h3>Turkey thawing</h3>
+      <p class="muted">In the fridge, allow about a day for every 4 pounds.</p>
+      <form method="post" class="row">{{ csrf() }}
+        <input type="hidden" name="action" value="thaw">
+        <div class="field"><label>Pounds</label><input name="pounds" inputmode="decimal" required></div>
+        <div class="field"><label>Extra days</label><input name="extra" inputmode="numeric" value="2" title="Days between thawed and cooking, e.g. for brining"></div>
+        <button>Add</button>
+      </form>
+      <table style="margin-top:.8rem;font-size:.9rem">
+        <tr><th>Size</th><th>Fridge</th><th>Cold water</th></tr>
+        <tr><td>8–12 lb</td><td>1–2 days</td><td>4–6 hours</td></tr>
+        <tr><td>12–16 lb</td><td>2–3 days</td><td>6–8 hours</td></tr>
+        <tr><td>16–20 lb</td><td>3–4 days</td><td>8–10 hours</td></tr>
+        <tr><td>20–24 lb</td><td>4–5 days</td><td>10–12 hours</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

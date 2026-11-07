@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf, thumb, guest_dish_fields %}
+{% block title %}{{ ev.name }}{% endblock %}
+{% block head %}<meta name="robots" content="noindex, nofollow">{% endblock %}
+{% block header %}{% endblock %}
+{% block content %}
+<div class="hero">
+  <h1>{{ ev.name }}</h1>
+  <p class="muted" style="font-size:1.05rem">{{ serve.strftime('%A, %B %-d') }} · dinner at {{ serve.strftime('%-I:%M %p') }}{% if ev.location %} · {{ ev.location }}{% endif %}</p>
+  {% if ev.notes %}<p style="white-space:pre-line">{{ ev.notes }}</p>{% endif %}
+</div>
+
+{% if not me %}
+<div class="card" style="max-width:640px;margin:0 auto">
+  <h2 style="margin-top:0">Who are you?</h2>
+  {% if ev.parties %}
+  <form method="post" action="{{ url_for('guest.choose_me', token=ev.guest_token) }}">{{ csrf() }}
+    {% for party in ev.parties if party.members %}
+    <div class="who-list" style="margin-bottom:.6rem">
+      {% for gst in party.members %}<button name="guest_id" value="{{ gst.id }}">{{ gst.name }}</button>{% endfor %}
+    </div>
+    {% endfor %}
+  </form>
+  <p class="muted" style="margin-top:.8rem">Not on the list? Ask the host to add you.</p>
+  {% else %}
+  <p class="muted">The host hasn't added the guest list yet.</p>
+  {% endif %}
+</div>
+{% else %}
+<div class="grid two">
+  <div class="card">
+    <div class="li-row"><h2 style="margin:0">Hi, {{ me.name }}</h2>
+      <form method="post" action="{{ url_for('guest.forget', token=ev.guest_token) }}">{{ csrf() }}<button class="link">Not you?</button></form>
+    </div>
+    <form method="post" action="{{ url_for('guest.rsvp', token=ev.guest_token) }}" style="margin-top:.8rem">{{ csrf() }}
+      <label>{{ 'Who\'s coming?' if me.party.members|length > 1 else 'Are you coming?' }}</label>
+      <ul class="plain" style="margin-bottom:.8rem">
+        {% for m in me.party.members %}
+        <li>
+          <div class="li-row">
+            <span style="font-weight:600">{{ m.name }}{% if m.age == 'child' %} <span class="chip">child</span>{% endif %}</span>
+            <span class="checks" role="radiogroup" aria-label="Is {{ m.name }} coming?">
+              <label><input type="radio" name="rsvp_{{ m.id }}" value="yes" {{ 'checked' if m.rsvp in ('yes','maybe') }}> Coming</label>
+              <label><input type="radio" name="rsvp_{{ m.id }}" value="no" {{ 'checked' if m.rsvp == 'no' }}> Can't make it</label>
+            </span>
+          </div>
+          {% if all_flags %}
+          <div class="checks" style="margin:.3rem 0 0">
+            <span class="muted">Can't eat:</span>
+            {% for f in all_flags %}<label><input type="checkbox" name="flags_{{ m.id }}" value="{{ f.id }}" {{ 'checked' if f in m.flags }}> {{ f.name }}</label>{% endfor %}
+          </div>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      <div class="field"><label for="note">Anything else the host should know?</label><input id="note" name="note" value="{{ me.note }}"></div>
+      <button>Save</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0">Bringing something?</h2>
+    {% if mine %}
+      {% for d in mine %}
+      <form method="post" action="{{ url_for('guest.edit_mine', token=ev.guest_token, dish_id=d.id) }}" class="card" style="margin-bottom:.8rem;box-shadow:none">{{ csrf() }}
+        <div class="field"><label>You're bringing</label><input name="name" value="{{ d.name }}" {{ 'readonly' if d.mealie_id }}></div>
+        {{ guest_dish_fields(d, all_flags) }}
+        <div class="actions"><button class="small">Save</button><button class="small quiet" name="action" value="{{ 'delete' if d.guest_added else 'release' }}">I can't bring this</button></div>
+      </form>
+      {% endfor %}
+    {% endif %}
+    {% if open_dishes %}
+    <p>The host is hoping someone can bring:</p>
+    <ul class="plain">
+      {% for d in open_dishes %}
+      <li class="li-row"><span><b>{{ d.name }}</b> <span class="chip">{{ d.course }}</span></span>
+        <form method="post" action="{{ url_for('guest.claim', token=ev.guest_token, dish_id=d.id) }}">{{ csrf() }}<button class="small">I'll bring it</button></form>
+      </li>
+      {% endfor %}
+    </ul>
+    <hr>
+    {% endif %}
+    <h3 style="margin-top:0">Add something else</h3>
+    <form method="post" action="{{ url_for('guest.bring', token=ev.guest_token) }}">{{ csrf() }}
+      <div class="row">
+        <div class="field grow"><label>Dish</label><input name="name" required placeholder="Green bean casserole"></div>
+        <div class="field" style="flex:0 1 130px"><label>Course</label><select name="course">{% for c in courses %}<option {{ 'selected' if c == 'side' }}>{{ c }}</option>{% endfor %}</select></div>
+      </div>
+      <div style="margin-top:.85rem">{{ guest_dish_fields(None, all_flags) }}</div>
+      <button>Add</button>
+    </form>
+  </div>
+</div>
+
+<div class="card" style="margin-top:1rem">
+  <h2 style="margin-top:0">On the menu</h2>
+  {% for d in menu %}
+  <div class="dish">
+    {{ thumb(d, mealie_public) }}
+    <div>
+      <div class="name">{{ d.name }} <span class="chip">{{ d.course }}</span></div>
+      <div class="meta">{{ 'From the host' if d.bringer == 'host' else d.who }}{% if d.mealie_id %} · <a href="{{ recipe_base }}{{ d.mealie_slug }}" target="_blank" rel="noopener">recipe</a>{% endif %}</div>
+      {% if group_flags %}
+      <div class="chips" style="margin-top:.25rem">
+        {% for f in all_flags if f.id in group_flags %}{% set st = status(d, f) %}<span class="chip {{ st }}">{{ {'safe':'✓ safe for','caution':'~ can be adjusted for','unsafe':'✕ not safe for','unknown':'? not sure about'}[st] }} {{ f.name }}</span>{% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    <div></div>
+  </div>
+  {% else %}
+  <p class="muted">The menu isn't set yet.</p>
+  {% endfor %}
+</div>
+
+<div class="card" style="margin-top:1rem">
+  <h2 style="margin-top:0">Who's coming</h2>
+  <p>{% for gst in ev.guests if gst.rsvp in ('yes','maybe','invited') %}{{ gst.name }}{% if gst.rsvp == 'maybe' %} <span class="muted">(maybe)</span>{% endif %}{{ ', ' if not loop.last }}{% endfor %}</p>
+</div>
+{% endif %}
+{% endblock %}

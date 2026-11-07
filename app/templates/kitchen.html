@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf %}
+{% block title %}Kitchen · Gravy Boat{% endblock %}
+{% block content %}
+<h1>Your kitchen</h1>
+<p class="muted">Everything you can cook on. The timeline only books what's here and how many dishes each one holds at once. Shared by everyone in your Mealie household.</p>
+
+<div class="grid side">
+  <div class="card pad-0">
+    <div class="table-scroll">
+    <table>
+      <tr><th>Appliance</th><th>Type</th><th>Holds</th><th></th></tr>
+      {% for a in apps %}
+      <tr><td colspan="4" style="padding:0">
+        <form method="post" class="row" style="padding:.5rem;align-items:center">{{ csrf() }}
+          <input type="hidden" name="id" value="{{ a.id }}">
+          <div class="field" style="flex:2 1 150px"><input name="name" value="{{ a.name }}" aria-label="Name"></div>
+          <div class="field" style="flex:1 1 130px"><select name="kind" aria-label="Type">{% for k, n in APPLIANCE_KINDS.items() %}<option value="{{ k }}" {{ 'selected' if a.kind == k }}>{{ n }}</option>{% endfor %}</select></div>
+          <div class="field" style="flex:0 1 90px"><input name="capacity" value="{{ a.capacity }}" inputmode="numeric" aria-label="Dishes at once" title="Dishes at once"></div>
+          <div class="actions">
+            <button name="action" value="update_appliance" class="small ghost">Save</button>
+            <button name="action" value="delete_appliance" class="small quiet">Remove</button>
+          </div>
+        </form>
+      </td></tr>
+      {% else %}
+      <tr><td colspan="4" class="muted" style="padding:1rem">Nothing yet. Use the quick adds or add one yourself.</td></tr>
+      {% endfor %}
+    </table>
+    </div>
+    <form method="post" class="row" style="padding:.75rem;border-top:1px solid var(--line)">{{ csrf() }}
+      <input type="hidden" name="action" value="add_appliance">
+      <div class="field" style="flex:2 1 150px"><label>Name</label><input name="name" placeholder="Back left burner" required></div>
+      <div class="field" style="flex:1 1 130px"><label>Type</label><select name="kind">{% for k, n in APPLIANCE_KINDS.items() %}<option value="{{ k }}">{{ n }}</option>{% endfor %}</select></div>
+      <div class="field" style="flex:0 1 90px"><label>Holds</label><input name="capacity" value="1" inputmode="numeric"></div>
+      <button>Add</button>
+    </form>
+  </div>
+
+  <div>
+    <div class="card">
+      <h2 style="margin-top:0">Quick add</h2>
+      <form method="post" class="actions">{{ csrf() }}
+        <input type="hidden" name="action" value="preset">
+        {% for key, label in [('oven','Oven'),('double_oven','Double oven'),('burners4','4 burners'),('burners5','5 burners'),('burners6','6 burners'),('smoker','Pellet smoker'),('grill','Grill'),('slow_cooker','Slow cooker'),('air_fryer','Air fryer'),('pressure_cooker','Instant Pot'),('microwave','Microwave')] %}
+        <button name="preset" value="{{ key }}" class="small ghost">+ {{ label }}</button>
+        {% endfor %}
+      </form>
+      <p class="muted" style="margin-top:.6rem">“Holds” is how many dishes fit at once: oven racks, smoker grates. Burners hold one pot each.</p>
+    </div>
+
+    <div class="card" style="margin-top:1rem">
+      <h2 style="margin-top:0">How you cook</h2>
+      <form method="post">{{ csrf() }}
+        <input type="hidden" name="action" value="settings">
+        <div class="row">
+          <div class="field"><label>Cooks</label><input name="cooks" value="{{ ks.cooks }}" inputmode="numeric"></div>
+          <div class="field"><label>Preheat (min)</label><input name="preheat_minutes" value="{{ ks.preheat_minutes }}" inputmode="numeric"></div>
+        </div>
+        <div class="row" style="margin-top:.85rem">
+          <div class="field"><label>Share oven within ({{ ks.deg }})</label><input name="temp_tolerance" value="{{ ks.temp_tolerance }}" inputmode="numeric"></div>
+          <div class="field"><label>Min per 10{{ ks.deg }} change</label><input name="minutes_per_10f" value="{{ ks.minutes_per_10f|qty }}" inputmode="decimal"></div>
+        </div>
+        <div class="field" style="margin-top:.85rem"><label>Temperatures in</label>
+          <select name="temp_unit"><option value="F" {{ 'selected' if ks.temp_unit == 'F' }}>Fahrenheit (°F)</option><option value="C" {{ 'selected' if ks.temp_unit == 'C' }}>Celsius (°C)</option></select>
+          <small>Switching converts every saved temperature.</small>
+        </div>
+        <div class="field"><label>Default “can wait” for new dishes (min)</label><input name="default_hold" value="{{ ks.default_hold }}" inputmode="numeric"></div>
+        <button>Save</button>
+      </form>
+      <p class="muted" style="margin-top:.6rem">Two dishes can share an oven if their temperatures are this close. With more than one cook, more hands-on tasks can overlap before Gravy Boat warns you.</p>
+    </div>
+  </div>
+</div>
+
+<h2 id="flags">Dietary flags</h2>
+<p class="muted">Each flag points at Mealie tags. A dish is <span class="chip safe">safe</span> when its recipe has a “safe” tag, <span class="chip caution">can be adjusted</span> with a caution tag, <span class="chip unsafe">not safe</span> with an unsafe tag, and <span class="chip unknown">unknown</span> otherwise.</p>
+{% macro tag_select(name, chosen, label) %}
+  <div class="field"><label>{{ label }}</label>
+  <select name="{{ name }}" multiple size="4">{% for t in tag_names %}<option {{ 'selected' if t in chosen }}>{{ t }}</option>{% endfor %}{% for t in chosen if t not in tag_names %}<option selected>{{ t }}</option>{% endfor %}</select></div>
+{% endmacro %}
+<div class="grid two">
+  {% for f in flags %}
+  <form method="post" class="card" action="{{ url_for('host.kitchen_post') }}">{{ csrf() }}
+    <input type="hidden" name="id" value="{{ f.id }}"><input type="hidden" name="anchor" value="#flags">
+    <div class="field"><label>Name</label><input name="name" value="{{ f.name }}"></div>
+    <div class="grid three">
+      {{ tag_select('safe', f.safe_tags, 'Safe tags') }}
+      {{ tag_select('caution', f.caution_tags, 'Caution tags') }}
+      {{ tag_select('unsafe', f.unsafe_tags, 'Unsafe tags') }}
+    </div>
+    <div class="actions"><button name="action" value="update_flag" class="small">Save</button><button name="action" value="delete_flag" class="small quiet">Delete</button></div>
+  </form>
+  {% endfor %}
+  <form method="post" class="card" action="{{ url_for('host.kitchen_post') }}">{{ csrf() }}
+    <input type="hidden" name="action" value="add_flag"><input type="hidden" name="anchor" value="#flags">
+    <h3 style="margin-top:0">New flag</h3>
+    <div class="field"><label>Name</label><input name="name" placeholder="Tree nuts (walnut, pecan)" required></div>
+    <div class="grid three">
+      {{ tag_select('safe', [], 'Safe tags') }}
+      {{ tag_select('caution', [], 'Caution tags') }}
+      {{ tag_select('unsafe', [], 'Unsafe tags') }}
+    </div>
+    <button class="small">Add flag</button>
+  </form>
+</div>
+{% if suggestions %}
+<div class="card" style="margin-top:1rem">
+  <h3 style="margin-top:0">Found in your Mealie tags</h3>
+  {% for s in suggestions %}
+  <form method="post" class="li-row" style="padding:.4rem 0">{{ csrf() }}
+    <input type="hidden" name="action" value="add_flag"><input type="hidden" name="anchor" value="#flags">
+    <input type="hidden" name="name" value="{{ s.name }}">
+    {% for t in s.safe %}<input type="hidden" name="safe" value="{{ t }}">{% endfor %}
+    {% for t in s.caution %}<input type="hidden" name="caution" value="{{ t }}">{% endfor %}
+    {% for t in s.unsafe %}<input type="hidden" name="unsafe" value="{{ t }}">{% endfor %}
+    <span><b>{{ s.name }}</b> <span class="muted">{{ (s.safe + s.caution + s.unsafe)|join(' / ') }}</span></span>
+    <button class="small ghost">Add</button>
+  </form>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

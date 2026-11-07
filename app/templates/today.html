@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf, conflicts %}
+{% block title %}Kitchen · {{ ev.name }}{% endblock %}
+{% block body_class %}today{% endblock %}
+{% block header %}{% endblock %}
+{% block content %}
+<div class="nowbar">
+  <div class="li-row">
+    <div>
+      <a href="{{ url_for('host.timeline', event_id=ev.id) }}">← {{ ev.name }}</a><br>
+      <span class="stat" id="clock">--:--</span> <span class="muted">serving at <b>{{ serve.strftime('%-I:%M %p') }}</b>{% if serve.date() != serve.today().date() %} on {{ serve.strftime('%a %b %-d') }}{% endif %}</span>
+    </div>
+    <form method="post" action="{{ url_for('host.shift_serve', event_id=ev.id) }}" class="actions">{{ csrf() }}
+      <input type="hidden" name="back" value="{{ url_for('host.today', event_id=ev.id) }}">
+      <span class="muted">Running late?</span>
+      <button name="minutes" value="15" class="small ghost">+15 min</button>
+      <button name="minutes" value="30" class="small ghost">+30 min</button>
+      <button name="minutes" value="-15" class="small quiet">−15</button>
+    </form>
+  </div>
+</div>
+{% if schedule.conflicts %}<details style="margin:.8rem 0"><summary>{{ schedule.conflicts|length }} thing(s) don't fit</summary>{{ conflicts(schedule.conflicts, dishes_by_id, ev) }}</details>{% endif %}
+<ul class="show" id="show" data-day="{{ serve.date().isoformat() }}">
+  {% for i in show %}
+  <li class="k-{{ i.kind }}" data-at="{{ i.clock.isoformat() }}" data-end="{{ (i.clock.isoformat()) }}"><span class="t">{{ i.when }}</span><span class="what">{{ i.text }}</span></li>
+  {% endfor %}
+</ul>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const items = Array.from(document.querySelectorAll('#show li'));
+  const clock = document.getElementById('clock');
+  let scrolled = false;
+  const day = document.getElementById('show').dataset.day;
+  function tick() {
+    const now = new Date();
+    clock.textContent = now.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
+    const today = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('-');
+    if (today < day) return;  // nothing is "now" before the day itself
+    let next = null;
+    items.forEach(li => {
+      const at = new Date(li.dataset.at);
+      li.classList.remove('now', 'past');
+      if (at < new Date(now.getTime() - 5 * 60000)) li.classList.add('past');
+      else if (!next) next = li;
+    });
+    if (next) {
+      next.classList.add('now');
+      if (!scrolled) { next.scrollIntoView({block: 'center'}); scrolled = true; }
+    }
+  }
+  tick();
+  setInterval(tick, 30000);
+  // keep the screen from sleeping where the browser allows it
+  if ('wakeLock' in navigator) { navigator.wakeLock.request('screen').catch(() => {}); }
+})();
+</script>
+{% endblock %}

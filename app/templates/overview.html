@@ -1,0 +1,85 @@
+{% extends "_event.html" %}
+{% from "_macros.html" import csrf, conflicts %}
+{% block event %}
+{% if no_kitchen %}<div class="flash warn">Add your appliances on the <a href="{{ url_for('host.kitchen') }}">Kitchen</a> page so the timeline knows what you can cook on.</div>{% endif %}
+
+<div class="grid three">
+  <div class="card"><div class="stat">{{ ev.people }}</div><div class="stat-label">coming ({{ ev.headcount|qty }} servings counting kids as half) · <a href="{{ url_for('host.guests', event_id=ev.id) }}">guests</a></div></div>
+  <div class="card"><div class="stat">{{ ev.dishes|length }}</div><div class="stat-label">dishes{% if open_dishes %}, <b>{{ open_dishes|length }}</b> still need someone{% endif %} · <a href="{{ url_for('host.menu', event_id=ev.id) }}">menu</a></div></div>
+  <div class="card"><div class="stat">{{ first or '—' }}</div><div class="stat-label">first kitchen task on the day · <a href="{{ url_for('host.timeline', event_id=ev.id) }}">timeline</a></div></div>
+</div>
+
+{% if schedule.conflicts %}
+<h2>Needs attention</h2>
+{{ conflicts(schedule.conflicts, dishes_by_id, ev) }}
+{% endif %}
+
+<div class="grid two" style="margin-top:1rem">
+  <div class="card">
+    <h2>Guest link</h2>
+    {% if ev.guest_link_enabled %}
+      <p class="muted">Anyone with this link can RSVP, add their dietary needs and sign up to bring a dish. No login needed.</p>
+      <div class="row">
+        <div class="field grow"><input id="glink" value="{{ guest_url }}" readonly onclick="this.select()"></div>
+        <button type="button" class="ghost" onclick="navigator.clipboard.writeText(document.getElementById('glink').value).then(()=>this.textContent='Copied')">Copy</button>
+      </div>
+      <form method="post" action="{{ url_for('host.guest_link', event_id=ev.id) }}" class="actions" style="margin-top:.6rem">{{ csrf() }}
+        <button name="action" value="rotate" class="quiet small">Make a new link</button>
+        <button name="action" value="disable" class="quiet small">Turn off</button>
+      </form>
+    {% else %}
+      <p class="muted">The guest link is off.</p>
+      <form method="post" action="{{ url_for('host.guest_link', event_id=ev.id) }}">{{ csrf() }}<button name="action" value="enable" class="ghost">Turn it on</button></form>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Dietary needs</h2>
+    {% if flag_summary %}
+      <ul class="plain">
+      {% for f, who, rows in flag_summary %}
+        {% set n_safe = rows|selectattr(1,'equalto','safe')|list|length %}
+        {% set bad = rows|rejectattr(1,'equalto','safe')|list %}
+        <li>
+          <b>{{ f.name }}</b> <span class="muted">({{ who|map(attribute='name')|join(', ') }})</span><br>
+          <span class="chip safe">{{ n_safe }} safe</span>
+          {% for d, st in bad %}<span class="chip {{ st }}">{{ d.name }}: {{ st }}</span> {% endfor %}
+        </li>
+      {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">No one coming has a dietary flag. Add them on the <a href="{{ url_for('host.guests', event_id=ev.id) }}">Guests</a> tab.</p>
+    {% endif %}
+  </div>
+</div>
+
+<div class="grid two" style="margin-top:1rem">
+  <div class="card">
+    <h2>Next prep</h2>
+    {% if prep_open %}
+    <ul class="plain">{% for t, on in prep_open[:5] %}<li>{{ t.label }} <span class="muted">· {{ on.strftime('%a %b %-d') }}</span></li>{% endfor %}</ul>
+    {% else %}<p class="muted">Nothing on the prep list. <a href="{{ url_for('host.prep', event_id=ev.id) }}">Add tasks</a> like thawing and brining.</p>{% endif %}
+  </div>
+  <div class="card">
+    <h2>Details</h2>
+    <form method="post" action="{{ url_for('host.edit_event', event_id=ev.id) }}">{{ csrf() }}
+      <div class="field"><label>Name</label><input name="name" value="{{ ev.name }}"></div>
+      <div class="row">
+        <div class="field"><label>Date</label><input type="date" name="date" value="{{ ev.date.isoformat() }}"></div>
+        <div class="field"><label>Serve time</label><input type="time" step="300" name="serve_time" value="{{ ev.serve_time.strftime('%H:%M') }}"></div>
+      </div>
+      <div class="field" style="margin-top:.85rem"><label>Where</label><input name="location" value="{{ ev.location }}" placeholder="Shown to guests"></div>
+      <div class="field"><label>Notes for guests</label><textarea name="notes" placeholder="Parking, what time to arrive…">{{ ev.notes }}</textarea></div>
+      <button>Save</button>
+    </form>
+  </div>
+</div>
+
+<details style="margin-top:2rem">
+  <summary class="muted">Delete this event</summary>
+  <form method="post" action="{{ url_for('host.delete_event', event_id=ev.id) }}" class="row" style="margin-top:.6rem">{{ csrf() }}
+    <div class="field grow"><label>Type “{{ ev.name }}” to confirm</label><input name="confirm" autocomplete="off"></div>
+    <button class="danger">Delete</button>
+  </form>
+</details>
+{% endblock %}

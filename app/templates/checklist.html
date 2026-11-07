@@ -1,0 +1,61 @@
+{% extends "_event.html" %}
+{% from "_macros.html" import csrf %}
+{% block event %}
+<div class="grid three">
+  <div class="card">
+    <h2 style="margin-top:0">Generalware</h2>
+    <ul class="plain">
+      {% for item in ev.checklist %}
+      {% set n = item.count(ev.people) %}
+      <li class="li-row">
+        <form method="post" class="inline" style="flex:1">{{ csrf() }}
+          <input type="hidden" name="item_id" value="{{ item.id }}"><input type="hidden" name="action" value="toggle">
+          <label style="display:flex;gap:.6rem;align-items:center;font-weight:400;margin:0;cursor:pointer">
+            <input type="checkbox" {{ 'checked' if item.done }} onchange="this.form.submit()">
+            <span class="{{ 'done' if item.done }}">{{ item.name }}{% if n %} <b>({{ n }})</b>{% endif %}{% if item.per_guest is not none %} <span class="muted">{{ item.per_guest|qty }}/person</span>{% endif %}</span>
+          </label>
+        </form>
+        <form method="post" class="inline">{{ csrf() }}<input type="hidden" name="item_id" value="{{ item.id }}"><button name="action" value="delete" class="link">remove</button></form>
+      </li>
+      {% endfor %}
+    </ul>
+    <form method="post" style="margin-top:.8rem">{{ csrf() }}
+      <input type="hidden" name="action" value="add">
+      <div class="field"><input name="name" placeholder="Add an item" aria-label="Item" required></div>
+      <div class="row">
+        <div class="field"><input name="count" inputmode="decimal" placeholder="How many" aria-label="Count"></div>
+        <div class="field"><select name="mode" aria-label="Count type"><option value="fixed">total</option><option value="per_guest">per person</option></select></div>
+        <button class="ghost">Add</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0">Cookware</h2>
+    <p class="muted">From the Tools on each host recipe in Mealie.</p>
+    <ul class="plain">
+      {% for tool, dishes in cookware.items() %}
+      <li>
+        <form method="post" class="inline">{{ csrf() }}
+          <input type="hidden" name="action" value="tool"><input type="hidden" name="name" value="{{ tool }}">
+          <label style="display:flex;gap:.6rem;align-items:flex-start;font-weight:400;margin:0;cursor:pointer">
+            <input type="checkbox" {{ 'checked' if tool in checked }} onchange="this.form.submit()" style="margin-top:.3rem">
+            <span><span class="{{ 'done' if tool in checked }}">{{ tool }}{% if dishes|length > 1 %} <b>×{{ dishes|length }}</b>{% endif %}</span><br><small>{{ dishes|join(', ') }}</small></span>
+          </label>
+        </form>
+      </li>
+      {% else %}
+      <li class="muted">No tools listed on the host recipes.</li>
+      {% endfor %}
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0">Serving dishes</h2>
+    <ul class="plain">
+      {% for d in serveware %}<li><b>{{ d.name }}</b><br><span class="muted">{{ d.serveware }}</span></li>
+      {% else %}<li class="muted">Add a serving dish on each dish's page (“Serving dish / utensils”).</li>{% endfor %}
+    </ul>
+  </div>
+</div>
+{% endblock %}

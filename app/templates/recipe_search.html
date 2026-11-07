@@ -1,0 +1,33 @@
+{% extends "_event.html" %}
+{% from "_macros.html" import csrf %}
+{% block event %}
+<form method="get" class="row" style="margin-bottom:1rem">
+  <div class="field grow"><input name="q" value="{{ q }}" placeholder="Search your Mealie recipes" aria-label="Search" autofocus></div>
+  <button>Search</button>
+  <a class="btn quiet" href="{{ url_for('host.menu', event_id=ev.id) }}">Back to menu</a>
+</form>
+<div class="card">
+  {% for r in results %}
+  <div class="dish">
+    <div class="ph" aria-hidden="true">{{ r.name[:1] }}<img src="{{ mealie_public }}/api/media/recipes/{{ r.id }}/images/min-original.webp" alt="" loading="lazy" onerror="this.remove()"></div>
+    <div>
+      <div class="name">{{ r.name }}</div>
+      <div class="meta">{{ r.recipeServings|qty }} servings{% if r.tags %} · {{ r.tags|map(attribute='name')|join(', ')|truncate(110) }}{% endif %}</div>
+    </div>
+    <div class="end">
+      {% if r.id in on_menu %}
+        <span class="chip safe">On the menu</span>
+      {% else %}
+      <form method="post" action="{{ url_for('host.add_recipe', event_id=ev.id) }}" class="actions">{{ csrf() }}
+        <input type="hidden" name="slug" value="{{ r.slug }}">
+        <select name="bringer" aria-label="Who makes it" style="width:auto"><option value="host">Host</option><option value="open">Needs someone</option></select>
+        <button class="small">Add</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+  {% else %}
+  <p class="muted">No recipes match “{{ q }}”.</p>
+  {% endfor %}
+</div>
+{% endblock %}

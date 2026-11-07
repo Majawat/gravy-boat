@@ -1,0 +1,67 @@
+{% extends "_event.html" %}
+{% from "_macros.html" import csrf %}
+{% block event %}
+<div class="grid side">
+  <div>
+    {% for party in ev.parties %}
+    <div class="card" style="margin-bottom:1rem">
+      <div class="li-row">
+        <h3 style="margin:0">{{ party.label }}</h3>
+        <span class="muted">{{ party.members|selectattr('rsvp','equalto','yes')|list|length }} of {{ party.members|length }} coming</span>
+      </div>
+      {% for gst in party.members %}
+      <form method="post" action="{{ url_for('host.update_guest', event_id=ev.id, guest_id=gst.id) }}" class="row" style="padding:.6rem 0;border-bottom:1px solid var(--line);align-items:center">{{ csrf() }}
+        <div class="field" style="flex:2 1 130px"><input name="name" value="{{ gst.name }}" aria-label="Name"></div>
+        <div class="field" style="flex:1 1 90px"><select name="age" aria-label="Age">{% for a in ['adult','child'] %}<option value="{{ a }}" {{ 'selected' if gst.age == a }}>{{ a|capitalize }}</option>{% endfor %}</select></div>
+        <div class="field" style="flex:1 1 110px"><select name="rsvp" aria-label="RSVP">{% for r in rsvps %}<option value="{{ r }}" {{ 'selected' if gst.rsvp == r }}>{{ {'invited':'Invited','yes':'Coming','maybe':'Maybe','no':'Not coming'}[r] }}</option>{% endfor %}</select></div>
+        <div class="field" style="flex:1 1 150px"><select name="party" aria-label="Group">
+          {% for p in ev.parties %}<option value="{{ p.id }}" {{ 'selected' if p.id == gst.party_id }}>{{ 'Group: ' ~ p.label if p.id == gst.party_id else 'Move to ' ~ p.label }}</option>{% endfor %}
+          <option value="new">Move to their own group</option>
+        </select></div>
+        <div class="checks" style="flex:2 1 160px">
+          {% for f in all_flags %}<label><input type="checkbox" name="flags" value="{{ f.id }}" {{ 'checked' if f in gst.flags }}> {{ f.name }}</label>{% else %}<span class="muted">No dietary flags yet</span>{% endfor %}
+        </div>
+        <div class="actions">
+          <button class="small ghost">Save</button>
+          <button class="small quiet" name="action" value="delete" title="Remove {{ gst.name }}">Remove</button>
+        </div>
+        {% if gst.note %}<div class="muted" style="flex-basis:100%">“{{ gst.note }}”</div>{% endif %}
+      </form>
+      {% endfor %}
+      <details style="margin-top:.5rem"><summary class="muted" style="cursor:pointer">Add someone to this group</summary>
+      <form method="post" action="{{ url_for('host.add_guest', event_id=ev.id) }}" class="row" style="margin-top:.6rem">{{ csrf() }}
+        <input type="hidden" name="party" value="{{ party.id }}">
+        <div class="field grow"><input name="name" placeholder="Add someone to this group" aria-label="Add to {{ party.label }}"></div>
+        <div class="field" style="flex:0 1 110px"><select name="age" aria-label="Age"><option value="adult">Adult</option><option value="child">Child</option></select></div>
+        <button class="small ghost">Add</button>
+      </form>
+      </details>
+    </div>
+    {% else %}
+    <div class="card"><p class="muted">No guests yet.</p></div>
+    {% endfor %}
+  </div>
+
+  <div>
+    <div class="card">
+      <h2 style="margin-top:0">Add guests</h2>
+      <form method="post" action="{{ url_for('host.add_guest', event_id=ev.id) }}">{{ csrf() }}
+        <div class="field"><label for="gn">Names</label><textarea id="gn" name="name" placeholder="Alex, Sam, Riley" required></textarea></div>
+        <label style="display:flex;gap:.5rem;align-items:center;font-weight:400"><input type="checkbox" name="together" value="1" checked> These people are one group</label>
+        <p class="muted">Anyone in a group can answer the guest link for the whole group.</p>
+        <div class="row">
+          <div class="field"><label>Age</label><select name="age"><option value="adult">Adult</option><option value="child">Child</option></select></div>
+          <div class="field"><label>RSVP</label><select name="rsvp"><option value="invited">Invited</option><option value="yes">Coming</option><option value="maybe">Maybe</option></select></div>
+        </div>
+        {% if all_flags %}<div class="field" style="margin-top:.85rem"><label>Dietary</label><div class="checks">{% for f in all_flags %}<label><input type="checkbox" name="flags" value="{{ f.id }}"> {{ f.name }}</label>{% endfor %}</div></div>{% endif %}
+        <button style="margin-top:.6rem">Add</button>
+      </form>
+    </div>
+    <div class="card" style="margin-top:1rem">
+      <h3 style="margin-top:0">Headcount</h3>
+      <p><b>{{ ev.people }}</b> coming or not yet answered ({{ ev.attending|selectattr('age','equalto','child')|list|length }} children). Recipes scale for <b>{{ ev.headcount|qty }}</b> servings, with children counting as half.</p>
+      <p class="muted">Dietary flags are set up on the <a href="{{ url_for('host.kitchen') }}#flags">Kitchen</a> page and matched against Mealie tags.</p>
+    </div>
+  </div>
+</div>
+{% endblock %}

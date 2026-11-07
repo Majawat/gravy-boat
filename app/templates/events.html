@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="li-row" style="margin-bottom:1rem">
+  <h1>Events</h1>
+  <a class="btn" href="{{ url_for('host.new_event') }}">New event</a>
+</div>
+{% if no_kitchen %}
+<div class="flash warn">Set up <a href="{{ url_for('host.kitchen') }}">your kitchen</a> (ovens, burners, smoker…) so Gravy Boat can build cooking timelines.</div>
+{% endif %}
+
+{% macro ev_card(e) %}
+<a class="card" href="{{ url_for('host.overview', event_id=e.id) }}" style="text-decoration:none;color:inherit;display:block">
+  <h3 style="margin:0 0 .2rem">{{ e.name }}</h3>
+  <div class="muted">{{ e.date.strftime('%a %b %-d, %Y') }} · {{ e.serve_time.strftime('%-I:%M %p') }} · {{ e.date|relday }}</div>
+  <div class="chips" style="margin-top:.5rem">
+    <span class="chip">{{ e.people }} coming</span>
+    <span class="chip">{{ e.dishes|length }} dishes</span>
+    {% set open = e.dishes|selectattr('bringer','equalto','open')|list|length %}
+    {% if open %}<span class="chip caution">{{ open }} need someone</span>{% endif %}
+  </div>
+</a>
+{% endmacro %}
+
+<h2>Coming up</h2>
+{% if upcoming %}
+<div class="grid three">{% for e in upcoming %}{{ ev_card(e) }}{% endfor %}</div>
+{% else %}
+<p class="muted">Nothing planned yet. <a href="{{ url_for('host.new_event') }}">Start one</a>{% if past %}, or copy a past event below{% endif %}.</p>
+{% endif %}
+
+{% if past %}
+<h2>Past</h2>
+<div class="card pad-0"><div class="table-scroll"><table>
+  <tr><th>Event</th><th>Date</th><th>Guests</th><th>Dishes</th><th></th></tr>
+  {% for e in past %}
+  <tr>
+    <td><a href="{{ url_for('host.overview', event_id=e.id) }}">{{ e.name }}</a></td>
+    <td>{{ e.date.strftime('%b %-d, %Y') }}</td>
+    <td>{{ e.people }}</td>
+    <td>{{ e.dishes|length }}</td>
+    <td><a href="{{ url_for('host.new_event', copy=e.id) }}">Copy for this year</a></td>
+  </tr>
+  {% endfor %}
+</table></div></div>
+{% endif %}
+{% endblock %}

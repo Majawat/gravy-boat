@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}{{ ev.name }} · Gravy Boat{% endblock %}
+{% block content %}
+<div class="event-head">
+  <h1>{{ ev.name }}</h1>
+  <div class="when">{{ ev.date.strftime('%A, %B %-d, %Y') }} · serving at {{ ev.serve_time.strftime('%-I:%M %p') }} · {{ ev.date|relday }}</div>
+</div>
+<nav class="tabs" aria-label="Event sections">
+  {% for key, label in [('overview','Overview'),('guests','Guests'),('menu','Menu'),('timeline','Timeline'),('prep','Prep'),('shopping','Shopping'),('checklist','Checklist')] %}
+  <a href="{{ url_for('host.' ~ key, event_id=ev.id) }}" class="{{ 'on' if active == key }}">{{ label }}</a>
+  {% endfor %}
+  <span class="spacer"></span>
+  <a href="{{ url_for('host.today', event_id=ev.id) }}">Kitchen mode</a>
+  <a href="{{ url_for('host.print_view', event_id=ev.id) }}">Print</a>
+</nav>
+{% block event %}{% endblock %}
+{% endblock %}

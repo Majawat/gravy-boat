@@ -1,0 +1,64 @@
+{% extends "_event.html" %}
+{% from "_macros.html" import csrf, diet_chips, thumb %}
+{% block event %}
+<div class="grid side">
+  <div>
+    {% for title, dishes in groups %}
+      {% if dishes or loop.first %}
+      <div class="card" style="margin-bottom:1rem">
+        <h2 style="margin-top:0">{{ title }}</h2>
+        {% for d in dishes %}
+        <div class="dish">
+          {{ thumb(d, mealie_public) }}
+          <div>
+            <div class="name"><a href="{{ url_for('host.dish', event_id=ev.id, dish_id=d.id) }}" style="color:inherit">{{ d.name }}</a> <span class="chip">{{ d.course }}</span></div>
+            <div class="meta">
+              {% if d.bringer == 'guest' %}{{ d.who }}{% if d.arrive_time %} · arrives {{ d.arrive_time.strftime('%-I:%M %p') }}{% endif %} · {% endif %}
+              {% if d.mealie_id %}×{{ scale(d)|qty }}{% if d.recipe_servings %} of {{ d.recipe_servings|qty }} servings{% endif %}{% if d.scale is none %} (auto){% endif %} · <a href="{{ recipe_base }}{{ d.mealie_slug }}" target="_blank" rel="noopener">recipe</a>{% else %}no recipe linked{% endif %}
+              {% if d.steps %} · {{ d.steps|sum(attribute='minutes')|dur }} total{% else %} · <span style="color:var(--amber)">no timing yet</span>{% endif %}
+            </div>
+            <div style="margin-top:.25rem">{{ diet_chips(d, flags_active, status) }}</div>
+          </div>
+          <div class="end"><a class="btn small quiet" href="{{ url_for('host.dish', event_id=ev.id, dish_id=d.id) }}">Edit</a></div>
+        </div>
+        {% else %}
+        <p class="muted">Nothing yet. Add recipes from Mealie, or a dish by name.</p>
+        {% endfor %}
+      </div>
+      {% endif %}
+    {% endfor %}
+  </div>
+
+  <div>
+    <div class="card">
+      <h2>Add from Mealie</h2>
+      <form method="get" action="{{ url_for('host.recipe_search', event_id=ev.id) }}" class="row">
+        <div class="field grow"><input name="q" placeholder="Search your recipes" aria-label="Search recipes"></div>
+        <button>Search</button>
+      </form>
+      <p class="muted" style="margin-top:.5rem"><a href="{{ url_for('host.recipe_search', event_id=ev.id) }}">Browse all recipes</a></p>
+    </div>
+    <div class="card" style="margin-top:1rem">
+      <h2>Add a dish by name</h2>
+      <p class="muted">For things without a Mealie recipe, like a guest's green beans or a store-bought pie.</p>
+      <form method="post" action="{{ url_for('host.add_dish', event_id=ev.id) }}">{{ csrf() }}
+        <div class="field"><label>Dish</label><input name="name" required></div>
+        <div class="row">
+          <div class="field"><label>Course</label><select name="course">{% for c in courses %}<option {{ 'selected' if c == 'side' }}>{{ c }}</option>{% endfor %}</select></div>
+          <div class="field"><label>Who</label><select name="bringer">
+            <option value="host">Host</option>
+            <option value="open">Needs someone</option>
+            {% for gst in ev.guests %}<option value="guest:{{ gst.id }}">{{ gst.name }}</option>{% endfor %}
+          </select></div>
+        </div>
+        <button style="margin-top:.85rem">Add</button>
+      </form>
+    </div>
+    {% if ev.dishes|selectattr('mealie_id')|list %}
+    <form method="post" action="{{ url_for('host.refresh_menu', event_id=ev.id) }}" style="margin-top:1rem">{{ csrf() }}
+      <button class="quiet small">Refresh tags &amp; tools from Mealie</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% from "_macros.html" import timeline_grid, legend, conflicts %}
+{% block title %}{{ ev.name }} · print{% endblock %}
+{% block content %}
+<div class="no-print actions" style="margin-bottom:1rem">
+  <a href="{{ url_for('host.overview', event_id=ev.id) }}">← Back</a>
+  <button onclick="window.print()">Print</button>
+</div>
+<h1>{{ ev.name }}</h1>
+<p>{{ ev.date.strftime('%A, %B %-d, %Y') }} · serving at {{ ev.serve_time.strftime('%-I:%M %p') }} · {{ ev.people }} people{% if ev.location %} · {{ ev.location }}{% endif %}</p>
+
+<div class="grid two">
+  <div>
+    <h2>Menu</h2>
+    <table>
+      <tr><th>Dish</th><th>Who</th><th>Batches</th><th>Serve in</th></tr>
+      {% for d in ev.dishes %}
+      <tr><td>{{ d.name }}</td><td>{{ d.who }}</td><td>{% if d.mealie_id and d.bringer == 'host' %}×{{ scale(d)|qty }}{% endif %}</td><td>{{ d.serveware }}</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+  <div>
+    <h2>Guests</h2>
+    <p>{% for gst in ev.attending %}{{ gst.name }}{% if gst.age == 'child' %} (child){% endif %}{% if gst.flags %} [{{ gst.flags|map(attribute='name')|join(', ') }}]{% endif %}{{ ', ' if not loop.last }}{% endfor %}</p>
+    {% if buckets %}
+    <h2>Prep</h2>
+    {% for name, tasks in buckets %}
+      <h3>{{ name }}</h3>
+      <ul>{% for t, on in tasks %}<li>☐ {{ on.strftime('%a %b %-d') }}: {{ t.label }}</li>{% endfor %}</ul>
+    {% endfor %}
+    {% endif %}
+  </div>
+</div>
+
+{% if dish_rows %}
+<div class="page-break"></div>
+<h2>Timeline</h2>
+{% if schedule.conflicts %}{{ conflicts(schedule.conflicts, dishes_by_id, ev) }}{% endif %}
+{{ legend() }}
+{{ timeline_grid(ev, span, hours, dish_rows, app_rows, apps, dishes_by_id, schedule, 'dish') }}
+<h2>Step by step</h2>
+<ul class="show">{% for i in show %}<li class="k-{{ i.kind }}"><span class="t">{{ i.when }}</span><span class="what">☐ {{ i.text }}</span></li>{% endfor %}</ul>
+{% endif %}
+
+<div class="page-break"></div>
+<div class="grid two">
+  <div>
+    <h2>Generalware</h2>
+    <ul>{% for item in ev.checklist %}{% set n = item.count(ev.people) %}<li>☐ {{ item.name }}{% if n %} ({{ n }}){% endif %}</li>{% endfor %}</ul>
+  </div>
+  <div>
+    <h2>Cookware</h2>
+    <ul>{% for tool, dishes in cookware.items() %}<li>☐ {{ tool }}{% if dishes|length > 1 %} ×{{ dishes|length }}{% endif %} <small>({{ dishes|join(', ') }})</small></li>{% endfor %}</ul>
+  </div>
+</div>
+{% endblock %}

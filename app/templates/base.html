@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Gravy Boat{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='gravyboat.css') }}?v=1">
+  <link rel="icon" href="{{ url_for('static', filename='icon.svg') }}" type="image/svg+xml">
+  {% block head %}{% endblock %}
+</head>
+<body class="{% block body_class %}{% endblock %}">
+{% macro icon() %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 15h18"/><path d="M4 15a8 8 0 0 1 16 0"/><path d="M12 7V5"/><path d="M10 5h4"/><path d="M2 19h20"/></svg>{% endmacro %}
+{% block header %}
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="{{ url_for('host.events') }}">{{ icon() }} Gravy Boat</a>
+    {% if session.get('mealie_token') %}
+    <nav>
+      <a href="{{ url_for('host.events') }}">Events</a>
+      <a href="{{ url_for('host.kitchen') }}">Kitchen</a>
+      <form method="post" action="{{ url_for('auth.logout') }}" class="inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="quiet small" title="Signed in as {{ session.get('user_name') }}">Sign out</button>
+      </form>
+    </nav>
+    {% endif %}
+  </div>
+</header>
+{% endblock %}
+<main>
+  <div class="wrap">
+    {% with msgs = get_flashed_messages(with_categories=true) %}
+      {% for cat, m in msgs %}<div class="flash {{ cat if cat in ('ok','warn','error') else 'ok' }}" role="status">{{ m }}</div>{% endfor %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </div>
+</main>
+{% block scripts %}{% endblock %}
+</body>
+</html>

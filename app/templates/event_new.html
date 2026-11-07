@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf %}
+{% block title %}New event · Gravy Boat{% endblock %}
+{% block content %}
+<div class="card" style="max-width:620px">
+  <h1>New event</h1>
+  <form method="post">
+    {{ csrf() }}
+    <div class="field"><label for="name">Name</label><input id="name" name="name" value="{{ form.get('name','') }}" placeholder="Christmas 2026" required></div>
+    <div class="row">
+      <div class="field"><label for="date">Date</label><input id="date" type="date" name="date" value="{{ form.get('date','') }}" required></div>
+      <div class="field"><label for="t">Serve time</label><input id="t" type="time" name="serve_time" value="{{ form.get('serve_time','14:00') }}" step="300" required></div>
+    </div>
+    <div class="field" style="margin-top:.85rem">
+      <label for="copy">Start from</label>
+      <select id="copy" name="copy_from">
+        <option value="">A blank plan</option>
+        {% for e in evs %}<option value="{{ e.id }}" {{ 'selected' if form.get('copy_from')|string == e.id|string }}>Copy {{ e.name }} ({{ e.date.year }})</option>{% endfor %}
+      </select>
+      <small>Copying keeps guests (RSVPs reset), the menu with timings, prep tasks and checklists (all unticked).</small>
+    </div>
+    <button type="submit">Create</button>
+  </form>
+</div>
+{% endblock %}

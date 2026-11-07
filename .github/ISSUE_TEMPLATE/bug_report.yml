@@ -1,0 +1,25 @@
+name: Bug report
+description: Something isn't working
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Gravy Boat image tag (or commit) and Mealie version.
+      placeholder: "ghcr.io/majawat/gravy-boat:latest, Mealie v3.30.0"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Anything relevant from `docker logs gravy-boat`. Remove secrets.
+      render: text

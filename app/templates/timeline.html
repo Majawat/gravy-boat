@@ -1,0 +1,30 @@
+{% extends "_event.html" %}
+{% from "_macros.html" import timeline_grid, legend, conflicts %}
+{% block event %}
+{% if not apps %}<div class="flash warn">No appliances yet. <a href="{{ url_for('host.kitchen') }}">Set up your kitchen</a> so steps can be placed on ovens and burners.</div>{% endif %}
+{% if schedule.conflicts %}{{ conflicts(schedule.conflicts, dishes_by_id, ev) }}{% endif %}
+{% if untimed %}<p class="muted">No timing yet for: {% for d in untimed %}<a href="{{ url_for('host.dish', event_id=ev.id, dish_id=d.id) }}">{{ d.name }}</a>{{ ', ' if not loop.last }}{% endfor %}.</p>{% endif %}
+
+{% if dish_rows %}
+<div class="li-row">
+  <h2 style="margin:.5rem 0">By dish</h2>
+  <span class="muted">Serving at {{ ev.serve_time.strftime('%-I:%M %p') }}</span>
+</div>
+{{ legend() }}
+{{ timeline_grid(ev, span, hours, dish_rows, app_rows, apps, dishes_by_id, schedule, 'dish') }}
+
+<h2>By appliance</h2>
+{{ timeline_grid(ev, span, hours, dish_rows, app_rows, apps, dishes_by_id, schedule, 'appliance') }}
+
+<h2>Step by step</h2>
+<div class="card">
+<ul class="show">
+  {% for i in show %}
+  <li class="k-{{ i.kind }}"><span class="t">{{ i.when }}</span><span class="what">{{ i.text }}</span></li>
+  {% endfor %}
+</ul>
+</div>
+{% else %}
+<div class="card"><p>Nothing to schedule yet. Add dishes on the <a href="{{ url_for('host.menu', event_id=ev.id) }}">menu</a> and give them kitchen steps.</p></div>
+{% endif %}
+{% endblock %}

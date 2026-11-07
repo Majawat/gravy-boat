@@ -1,0 +1,121 @@
+{% macro csrf() %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endmacro %}
+
+{% macro diet_chips(dish, flags_active, status) %}
+  {% if flags_active %}
+  <span class="chips">
+  {% for f, who in flags_active %}
+    {% set st = status(dish, f) %}
+    <span class="chip {{ st }}" title="{{ f.name }} ({{ who|map(attribute='name')|join(', ') }}): {{ st }}">
+      {{ {'safe':'✓','caution':'~','unsafe':'✕','unknown':'?'}[st] }} {{ f.name }}
+    </span>
+  {% endfor %}
+  </span>
+  {% endif %}
+{% endmacro %}
+
+{% macro thumb(d, mealie_public) %}
+  <div class="ph" aria-hidden="true">{{ d.name[:1] }}{% if d.mealie_id %}<img src="{{ mealie_public }}/api/media/recipes/{{ d.mealie_id }}/images/min-original.webp" alt="" loading="lazy" onerror="this.remove()">{% endif %}</div>
+{% endmacro %}
+
+{% macro pos(start, end, span) -%}
+  {%- set total = (span[1] - span[0]) or 1 -%}
+  left:{{ '%.3f'|format((start - span[0]) / total * 100) }}%;width:{{ '%.3f'|format(((end - start) / total * 100) if end > start else 0.4) }}%
+{%- endmacro %}
+
+{% macro bar_kind(p) -%}
+  {%- if p.appliance_id -%}k-{{ p.kind or 'other' }}{%- elif p.hands_on -%}k-hands{%- else -%}k-wait{%- endif -%}
+{%- endmacro %}
+
+{% macro timeline_grid(ev, span, hours, dish_rows, app_rows, apps, dishes_by_id, schedule, by='dish') %}
+<div class="tl" role="img" aria-label="Cooking timeline">
+  <div class="tl-inner">
+    <div class="tl-row tl-head">
+      <div class="tl-label">{{ 'Dish' if by == 'dish' else 'Appliance' }}</div>
+      <div class="tl-track">
+        {% for m, t in hours %}<div class="tl-hour" style="left:{{ '%.3f'|format((m - span[0]) / ((span[1]-span[0]) or 1) * 100) }}%"><span>{{ t }}</span></div>{% endfor %}
+      </div>
+    </div>
+    {% if by == 'dish' %}
+      {% for d, r in dish_rows %}
+      <div class="tl-row">
+        <div class="tl-label"><a href="{{ url_for('host.dish', event_id=ev.id, dish_id=d.id) }}" title="{{ d.name }}">{{ d.name }}</a></div>
+        <div class="tl-track">
+          {% for m, t in hours %}<div class="tl-hour" style="left:{{ '%.3f'|format((m - span[0]) / ((span[1]-span[0]) or 1) * 100) }}%"></div>{% endfor %}
+          {% if 0 >= span[0] and 0 <= span[1] %}<div class="tl-serve" style="{{ pos(0, 0, span) }}"></div>{% endif %}
+          {% for p in r.placements %}
+            {% set a = apps.get(p.appliance_id) if p.appliance_id else None %}
+            <div class="bar {{ bar_kind(p) }}" style="{{ pos(p.start, p.end, span) }}" title="{{ p.label }} · {{ (p.end - p.start)|dur }}{% if a %} · {{ a.name }}{% endif %}{% if p.temp %} · {{ p.temp }}{{ deg }}{% endif %}">
+              {{ p.label }}{% if p.temp %} {{ p.temp }}°{% endif %}
+            </div>
+          {% endfor %}
+          {% if r.hold %}<div class="bar k-hold" style="{{ pos(r.finish, r.finish + r.hold, span) }}" title="Held {{ r.hold }} min">hold</div>{% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      {% for a, ps, heats in app_rows %}
+      <div class="tl-row">
+        <div class="tl-label" title="{{ a.name }}">{{ a.name }}</div>
+        <div class="tl-track">
+          {% for m, t in hours %}<div class="tl-hour" style="left:{{ '%.3f'|format((m - span[0]) / ((span[1]-span[0]) or 1) * 100) }}%"></div>{% endfor %}
+          {% if 0 >= span[0] and 0 <= span[1] %}<div class="tl-serve" style="{{ pos(0, 0, span) }}"></div>{% endif %}
+          {% for h in heats %}<div class="bar k-preheat" style="{{ pos(h.at, h.ready_by, span) }}" title="Heat to {{ h.temp }}{{ deg }}">{{ h.temp }}°</div>{% endfor %}
+          {% for p in ps %}
+            {% set dn = dishes_by_id[p.dish_id].name %}
+            <div class="bar {{ bar_kind(p) }}" style="{{ pos(p.start, p.end, span) }}{% if a.capacity > 1 %};opacity:.9{% endif %}" title="{{ dn }} · {{ p.label }} · {{ (p.end - p.start)|dur }}{% if p.temp %} · {{ p.temp }}{{ deg }}{% endif %}">{{ dn }}{% if p.temp %} {{ p.temp }}°{% endif %}</div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    {% endif %}
+  </div>
+</div>
+{% endmacro %}
+
+{% macro legend() %}
+<div class="legend">
+  <span><i style="background:var(--hands)"></i>Hands-on</span>
+  <span><i style="background:var(--oven)"></i>Oven</span>
+  <span><i style="background:var(--smoker)"></i>Smoker</span>
+  <span><i style="background:var(--burner)"></i>Burner</span>
+  <span><i style="background:var(--slow)"></i>Slow cooker</span>
+  <span><i style="background:repeating-linear-gradient(135deg,var(--wait) 0 3px,transparent 3px 5px);border:1px solid var(--wait)"></i>Resting / waiting</span>
+  <span><i style="border:1px dashed var(--ink-2)"></i>Held until serving</span>
+  <span><i style="background:var(--accent)"></i>Serve</span>
+</div>
+{% endmacro %}
+
+{% macro conflicts(list, dishes_by_id, ev) %}
+  {% for c in list %}
+  <div class="conflict {{ c.kind }}">
+    {% if c.start is not none and c.end is not none and c.kind in ('clash','hands') %}<b>{{ when_at(ev, c.start) }}–{{ when_at(ev, c.end) }}:</b> {% endif %}{{ c.message }}
+    {% for did in c.dish_ids %}{% if did in dishes_by_id %} <a href="{{ url_for('host.dish', event_id=ev.id, dish_id=did) }}">Edit {{ dishes_by_id[did].name }}</a>{% endif %}{% endfor %}
+  </div>
+  {% endfor %}
+{% endmacro %}
+
+{% macro guest_dish_fields(d, all_flags) %}
+  <div class="row">
+    <div class="field"><label>Arriving around</label><input type="time" step="300" name="arrive_time" value="{{ d.arrive_time.strftime('%H:%M') if d and d.arrive_time else '' }}"></div>
+    {% set step = (d.steps|selectattr('label','in',['Reheat','Keep warm','Finish'])|first) if d else none %}
+    <div class="field"><label>Needs the kitchen?</label>
+      <select name="needs">
+        {% for v, l in [('none','No, ready to serve'),('oven','Oven to warm up'),('burner','A burner'),('microwave','Microwave'),('slow_cooker','An outlet (slow cooker)')] %}
+        <option value="{{ v }}" {{ 'selected' if (step and step.kind == v) or (not step and v == 'none') }}>{{ l }}</option>{% endfor %}
+      </select>
+    </div>
+  </div>
+  <div class="row" style="margin-top:.85rem">
+    <div class="field"><label>For how long (min)</label><input name="need_minutes" inputmode="numeric" value="{{ step.minutes if step else '' }}"></div>
+    <div class="field"><label>Oven {{ deg }}</label><input name="need_temp" inputmode="numeric" value="{{ step.temp if step and step.temp else '' }}"></div>
+  </div>
+  {% if all_flags %}
+  <div class="field" style="margin-top:.85rem"><label>Is it safe for…</label>
+    {% for f in all_flags %}{% set cur = ((d.diet or {}).get(f.id|string, '')) if d else '' %}
+    <div class="row" style="align-items:center;margin-bottom:.3rem"><span style="flex:1 1 140px">{{ f.name }}</span>
+      <select name="diet_{{ f.id }}" style="flex:1 1 140px" {{ 'disabled' if d and d.mealie_id }}><option value="">Not sure</option>{% for v, l in [('safe','Yes'),('caution','Can be adjusted'),('unsafe','No')] %}<option value="{{ v }}" {{ 'selected' if cur == v }}>{{ l }}</option>{% endfor %}</select></div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  <div class="field"><label>Note for the host</label><input name="notes" value="{{ d.notes if d else '' }}"></div>
+{% endmacro %}

@@ -1,0 +1,12 @@
+services:
+  gravy-boat:
+    image: ghcr.io/majawat/gravy-boat:latest
+    # build: .                      # or build from this checkout instead
+    container_name: gravy-boat
+    restart: unless-stopped
+    ports:
+      - "8794:8794"
+    env_file: .env
+    volumes:
+      - ./data:/data
+    # user: "1000:1000"             # owner for files in ./data (Unraid: "99:100")

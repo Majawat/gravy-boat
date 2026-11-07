@@ -1,0 +1,33 @@
+{% extends "_event.html" %}
+{% from "_macros.html" import csrf %}
+{% block event %}
+<div class="grid side">
+  <div class="card">
+    <h2 style="margin-top:0">What goes on the list</h2>
+    <p class="muted">Host dishes linked to a Mealie recipe, sized for {{ headcount|qty }} servings. Mealie merges the same ingredients across recipes and sorts them by aisle.</p>
+    <table>
+      <tr><th>Recipe</th><th>Makes</th><th>Batches</th></tr>
+      {% for d in host_dishes %}
+      <tr>
+        <td>{% if d.mealie_id %}{{ d.name }}{% else %}{{ d.name }} <span class="muted">(no recipe, not on the list)</span>{% endif %}</td>
+        <td>{{ d.recipe_servings|qty if d.recipe_servings else '—' }}</td>
+        <td>{% if d.mealie_id %}×{{ scale(d)|qty }} {% if d.scale is none %}<span class="muted">auto</span>{% endif %} <a href="{{ url_for('host.dish', event_id=ev.id, dish_id=d.id) }}">change</a>{% endif %}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3" class="muted">No host dishes yet.</td></tr>
+      {% endfor %}
+    </table>
+    <p class="muted" style="margin-top:.8rem">Guest dishes aren't added. Their cooks shop for them.</p>
+  </div>
+  <div class="card">
+    <h2 style="margin-top:0">Mealie shopping list</h2>
+    {% if ev.shopping_list_id %}
+      <p><a class="btn ghost" href="{{ mealie_public }}/shopping-lists/{{ ev.shopping_list_id }}" target="_blank" rel="noopener">Open the list in Mealie</a></p>
+      <p class="muted">Changed the menu or the headcount? Update the list. Gravy Boat only adds or removes the recipe amounts it's responsible for. Anything you added by hand stays.</p>
+    {% else %}
+      <p class="muted">Gravy Boat will create a shopping list in Mealie named after this event.</p>
+    {% endif %}
+    <form method="post">{{ csrf() }}<button>{{ 'Update the list' if ev.shopping_list_id else 'Create the shopping list' }}</button></form>
+  </div>
+</div>
+{% endblock %}

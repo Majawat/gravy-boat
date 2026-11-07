@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Sign in · Gravy Boat{% endblock %}
+{% block content %}
+<div class="login card">
+  <h1>Sign in</h1>
+  <p class="muted">Use your Mealie username and password. Gravy Boat doesn't keep its own accounts.</p>
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="next" value="{{ next }}">
+    <div class="field"><label for="u">Mealie username or email</label><input id="u" name="username" value="{{ username }}" autocomplete="username" required autofocus></div>
+    <div class="field"><label for="p">Password</label><input id="p" name="password" type="password" autocomplete="current-password" required></div>
+    <button type="submit" style="width:100%">Sign in</button>
+  </form>
+  <details style="margin-top:1rem">
+    <summary class="muted" style="cursor:pointer">Sign in with a Mealie API token instead</summary>
+    <form method="post" style="margin-top:.6rem">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="next" value="{{ next }}">
+      <p class="muted">For accounts that sign in to Mealie with single sign-on. Create a token in Mealie under your profile → API Tokens.</p>
+      <div class="field"><label for="t">API token</label><input id="t" name="api_token" type="password" autocomplete="off" required></div>
+      <button type="submit" class="ghost" style="width:100%">Sign in with token</button>
+    </form>
+  </details>
+</div>
+{% endblock %}
