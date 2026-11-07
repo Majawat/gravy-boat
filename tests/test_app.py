@@ -562,3 +562,13 @@ def test_security_headers(client):
     r = client.get("/login")
     assert "frame-ancestors 'none'" in r.headers["Content-Security-Policy"]
     assert r.headers["X-Frame-Options"] == "DENY"
+
+
+def test_redirect_targets_cannot_leave_the_site(client):
+    for bad in ["https://evil.example/x", "//evil.example", "/\\evil.example", "/\\/evil.example", "\\\\evil.example",
+                "javascript:alert(1)", "/path\nx"]:
+        r = client.post("/login", data={"username": "taylor", "password": "pw", "next": bad})
+        assert r.headers["Location"] == "/", bad
+        client.post("/logout")
+    r = client.post("/login", data={"username": "taylor", "password": "pw", "next": "/kitchen?x=1"})
+    assert r.headers["Location"] == "/kitchen?x=1"

@@ -2,7 +2,7 @@ import threading
 import time
 from collections import defaultdict, deque
 from functools import wraps
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 from flask import Blueprint, current_app, flash, g, redirect, render_template, request, session, url_for
 
@@ -50,12 +50,18 @@ def login_required(view):
 
 
 def _safe_next(target):
-    if not target:
-        return url_for("host.events")
+    """A same-site path to go to after an action, or the events page.
+
+    Browsers treat a backslash like a slash, so "/\\evil.example" would leave the site; backslashes
+    and control characters are refused, and only a plain path (no scheme or host) is allowed.
+    """
+    home = url_for("host.events")
+    if not target or "\\" in target or any(ord(c) < 32 for c in target):
+        return home
     parts = urlsplit(target)
-    if parts.scheme or parts.netloc or not target.startswith("/") or target.startswith("//"):
-        return url_for("host.events")
-    return target
+    if parts.scheme or parts.netloc or not parts.path.startswith("/") or parts.path.startswith("//"):
+        return home
+    return urlunsplit(("", "", parts.path, parts.query, ""))
 
 
 @bp.route("/login", methods=["GET", "POST"])
