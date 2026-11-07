@@ -87,9 +87,9 @@ Then open it through your reverse proxy and sign in with your Mealie account.
 | `GRAVYBOAT_INSECURE_COOKIES` | unset | `1` allows sign-in over plain http. LAN testing only. |
 | `GRAVYBOAT_DATABASE_URL` | `sqlite:////data/gravyboat.db` | |
 | `TZ` | UTC | Your time zone, so "today" and the clock are right. |
+| `PUID` / `PGID` | `1000` / `1000` | User and group that own `./data` and run the app (Unraid: `99` / `100`). |
 
-The container runs as uid/gid 1000. To own the data folder as someone else, add `user: "UID:GID"` to the
-service (on Unraid, `"99:100"`).
+The container fixes the data folder's owner on start, then runs as `PUID:PGID`, never as root.
 
 ## Accounts and privacy
 

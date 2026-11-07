@@ -9,4 +9,6 @@ services:
     env_file: .env
     volumes:
       - ./data:/data
-    # user: "1000:1000"             # owner for files in ./data (Unraid: "99:100")
+    # environment:
+    #   PUID: "1000"                # owner of ./data and the app's user (Unraid: 99 / 100)
+    #   PGID: "1000"
