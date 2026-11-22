@@ -123,10 +123,10 @@ def test_one_cook_does_hands_on_dishes_one_after_another():
 
 
 def test_hands_on_overload_is_flagged_when_nothing_can_move():
-    from app.scheduler import Placement, _hands_on_overload
+    from app.scheduler import Cook, Placement, _hands_on_overload
 
     ps = [Placement(1, 1, "Whisk", -20, 0, "burner", 10, None, True), Placement(2, 2, "Mash", -20, 0, "burner", 11, None, True)]
-    hands = _hands_on_overload(ps, Settings(cooks=1))
+    hands = _hands_on_overload(ps, [Cook(1)])
     assert len(hands) == 1 and hands[0].start == -20 and hands[0].end == 0
 
 
@@ -224,3 +224,83 @@ def test_one_cooks_back_to_back_steps_count_once():
     sprouts = Dish(2, "Sprouts", [Step(3, "Trim", 10, hands_on=True)])
     s = build_schedule([gravy, sprouts], BURNERS, Settings(cooks=2))
     assert s.dishes[1].finish == 0 and s.dishes[2].finish == 0  # two cooks, two tasks at a time
+
+
+# --- cooks and availability -------------------------------------------------------
+
+def _cooks(*away_per_cook):
+    from app.scheduler import Cook
+
+    return [Cook(i + 1, f"Cook {i + 1}", away=list(a)) for i, a in enumerate(away_per_cook)]
+
+
+def test_hands_on_work_goes_to_whoever_is_home():
+    from app.scheduler import Cook
+
+    cooks = [Cook(1, "Alex", away=[(-60, 0)]), Cook(2, "Jordan")]
+    d = Dish(1, "Butter", [Step(1, "Whip", 10, hands_on=True)])
+    s = build_schedule([d], [], cooks=cooks)
+    assert s.dishes[1].placements[0].cook_id == 2
+
+
+def test_assigned_dish_waits_for_its_cook():
+    from app.scheduler import Cook
+
+    cooks = [Cook(1, "Alex", away=[(-60, 0)]), Cook(2, "Jordan")]
+    d = Dish(1, "Turkey", [Step(1, "Carve", 20, hands_on=True)], max_hold=120, cook_id=1)
+    s = build_schedule([d], [], cooks=cooks)
+    p = s.dishes[1].placements[0]
+    assert p.cook_id == 1 and p.end <= -60  # done before Alex leaves
+
+
+def test_one_cook_sees_a_dish_through_when_they_can():
+    d = Dish(1, "Rolls", [Step(1, "Mix", 10, hands_on=True), Step(2, "Knead", 10, hands_on=True)])
+    s = build_schedule([d], [], cooks=_cooks((), ()))
+    assert len({p.cook_id for p in s.dishes[1].placements}) == 1
+
+
+def test_grill_needs_someone_home_but_the_fridge_does_not():
+    smoker = Appliance(5, "Smoker", "smoker")
+    everyone_out = [(-300, -120)]
+    smoke = Dish(1, "Brisket", [Step(1, "Smoke", 120, kind="smoker")], max_hold=600)
+    chill = Dish(2, "Slaw", [Step(2, "Chill", 240)])
+    s = build_schedule([smoke, chill], [smoker], cooks=_cooks(everyone_out, everyone_out))
+    sm = s.dishes[1].placements[0]
+    assert not (sm.start < -120 and -300 < sm.end)  # not on while the house is empty
+    assert s.dishes[2].finish == 0 and s.dishes[2].placements[0].start == -240  # chilling while out is fine
+    assert not [c for c in s.conflicts if c.kind == "nobody_home"]
+
+
+def test_asleep_means_no_hands_on_but_still_home():
+    from app.scheduler import Cook
+
+    quiet = (-900, -420)  # 10 PM to 6 AM before a 1 PM serve
+    smoke = Dish(1, "Brisket", [Step(1, "Trim", 30, hands_on=True), Step(2, "Smoke", 720, kind="smoker")], max_hold=600)
+    s = build_schedule([smoke], [Appliance(5, "Smoker", "smoker")], cooks=[Cook(1, "Alex", quiet=[quiet])])
+    trim, sm = s.dishes[1].placements
+    assert not (trim.start < quiet[1] and quiet[0] < trim.end)  # no trimming while asleep
+    assert sm.start < quiet[1] and quiet[0] < sm.end  # the smoke runs overnight anyway
+    assert not s.conflicts
+
+
+def test_a_stretchable_wait_lets_earlier_work_move_to_when_someone_is_home():
+    turkey = Dish(1, "Turkey", [
+        Step(1, "Spatchcock", 40, hands_on=True),
+        Step(2, "Dry brine", 1440, stretch=True),
+        Step(3, "Smoke", 150, kind="smoker"),
+    ])
+    work = [(-1440 - 600, -1440 - 120)]  # the day before, 8 hours away right when the brine would start
+    s = build_schedule([turkey], [Appliance(5, "Smoker", "smoker")], cooks=_cooks(work, work))
+    prep, brine, smoke = s.dishes[1].placements
+    assert smoke.end == 0 and brine.end == smoke.start
+    assert prep.end == brine.start and prep.end <= -1440 - 600  # done before leaving that morning...
+    assert brine.end - brine.start > 1440  # ...and the brine simply ran longer
+    assert not s.conflicts
+
+
+def test_waits_that_cannot_stretch_keep_their_length():
+    rolls = Dish(1, "Rolls", [Step(1, "Mix", 20, hands_on=True), Step(2, "Rise", 90), Step(3, "Bake", 20, kind="oven", temp=375)], max_hold=600)
+    out = [(-200, -120)]
+    s = build_schedule([rolls], [OVEN], cooks=_cooks(out))
+    mix, rise, bake = s.dishes[1].placements
+    assert rise.end - rise.start == 90 and mix.end == rise.start

@@ -26,6 +26,12 @@ headcount, and checklists for the table. Recipes stay in Mealie; Gravy Boat neve
   an oven, allows time to change temperature, adds preheats, and treats your cooks as a limit like oven
   racks. Overnight cooks and multi-day brines land on the right day, and anything before the day itself is
   listed by date.
+- **Cooks and who's home.** Name your cooks (or add everyone in your Mealie household) and add away times
+  per event: work, a game, a weekly schedule in one go. Hands-on steps go to whoever is home and
+  free, or only to the cook you assign a dish to; nothing is left on the grill, oven or stove while
+  everyone's out, and nothing hands-on is planned in quiet hours. Waits like a dry brine or an overnight
+  chill can run longer, so the work before them moves to when someone's home. Kitchen mode shows each
+  cook their own list. Anyone in your Mealie household can sign in and see everything.
 - **Sub-recipes and make-ahead.** A stock or compound butter linked as an ingredient in Mealie is timed to
   be ready before the step that uses it and sized from how much the parent needs. Mark a dish "make ahead"
   to finish it on an earlier day and take it off the day's timeline.

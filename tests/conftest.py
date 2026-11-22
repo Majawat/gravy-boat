@@ -98,6 +98,10 @@ class FakeMealie:
                 return r
         raise KeyError(slug_or_id)
 
+    def household_members(self):
+        self._check()
+        return [{"id": "u-taylor", "fullName": "Taylor", "username": "taylor"}, {"id": "u-sam", "fullName": "Sam", "username": "sam"}]
+
     def tags(self):
         self._check()
         return [{"name": n} for n in ["Tree Nut-Safe", "Gluten-Safe", "Gluten-Modifiable", "Gluten-Unsafe", "holiday"]]

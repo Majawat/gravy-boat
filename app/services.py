@@ -6,6 +6,8 @@ from .mealie import list_recipe_quantities, recipe_summary, shopping_diff
 from .models import (
     DEFAULT_GENERALWARE,
     Appliance,
+    AwayBlock,
+    Cook,
     ChecklistItem,
     DietaryFlag,
     Dish,
@@ -38,6 +40,29 @@ def kitchen_settings(household_id):
 
 def appliances(household_id):
     return Appliance.query.filter_by(household_id=household_id).order_by(Appliance.sort, Appliance.id).all()
+
+
+def cooks(household_id):
+    return Cook.query.filter_by(household_id=household_id).order_by(Cook.sort, Cook.id).all()
+
+
+def add_household_cooks(household_id, client):
+    """Add a cook for every member of the Mealie household who isn't one yet. Returns how many were added."""
+    existing = cooks(household_id)
+    have = {c.mealie_user_id for c in existing if c.mealie_user_id}
+    added = 0
+    for m in client.household_members():
+        if not m.get("id") or m["id"] in have:
+            continue
+        full = (m.get("fullName") or "").strip()
+        name = (full.split()[0] if full else (m.get("username") or "Cook"))[:80]  # first names read best in lists
+        db.session.add(Cook(household_id=household_id, name=name, mealie_user_id=m["id"], sort=len(existing) + added))
+        added += 1
+    return added
+
+
+QUIET_START = time(22, 0)
+QUIET_END = time(6, 0)
 
 
 def flags(household_id):
@@ -177,7 +202,7 @@ def _set_steps(dish, recipe, overrides):
 
     unit = kitchen_settings(dish.event.household_id).temp_unit
     steps, ahead, untimed = steps_from_recipe(recipe, overrides, unit)
-    keys = ("source_id", "source_text", "label", "minutes", "kind", "appliance_id", "temp", "hands_on")
+    keys = ("source_id", "source_text", "label", "minutes", "kind", "appliance_id", "temp", "hands_on", "stretch")
     dish.steps = [Step(seq=i, uses=st.get("uses") or [], **{k: st.get(k) for k in keys}) for i, st in enumerate(steps)]
     return ahead, untimed
 
@@ -306,8 +331,9 @@ def new_event(household_id, name, date, serve_time, created_by, copy_from=None, 
             thaw_lbs=d.thaw_lbs,
             guest_added=d.guest_added,
             sort=d.sort,
+            cook_id=d.cook_id,
             steps=[
-                Step(seq=s.seq, source_id=s.source_id, source_text=s.source_text, label=s.label, minutes=s.minutes, kind=s.kind, appliance_id=s.appliance_id, temp=s.temp, hands_on=s.hands_on, uses=list(s.uses or []))
+                Step(seq=s.seq, source_id=s.source_id, source_text=s.source_text, label=s.label, minutes=s.minutes, kind=s.kind, appliance_id=s.appliance_id, temp=s.temp, hands_on=s.hands_on, uses=list(s.uses or []), stretch=s.stretch)
                 for s in d.steps
             ],
         )
@@ -337,7 +363,7 @@ def _earliest_start(event, dish):
 
 
 MAKE_AHEAD_DEFAULT_TIME = time(18, 0)
-MAKE_AHEAD_HOLD = 12 * 60  # a made-ahead dish is stored, not kept hot: it can be done any time that day
+MAKE_AHEAD_HOLD = 2 * 24 * 60  # a made-ahead dish is stored, not kept hot: it can be done well before its time
 
 
 def make_ahead_ready(event, dish):
@@ -353,15 +379,42 @@ def day_start(event):
     return int((datetime.combine(event.date, time(0, 0)) - serve_datetime(event)).total_seconds() // 60)
 
 
+def _minutes(event, dt):
+    return int((dt - serve_datetime(event)).total_seconds() // 60)
+
+
+def schedule_cooks(event, ks=None):
+    """The household's cooks for the scheduler, with this event's away times and nightly quiet hours.
+    None when no cooks are named, so the scheduler falls back to the plain cook count."""
+    ks = ks or kitchen_settings(event.household_id)
+    people = cooks(event.household_id)
+    if not people:
+        return None
+    qs, qe = ks.quiet_start or QUIET_START, ks.quiet_end or QUIET_END
+    quiet = []
+    if qs != qe:
+        for back in range(-10, 2):  # nights around the event, far enough for make-ahead and brines
+            day = event.date + timedelta(days=back)
+            start = datetime.combine(day, qs)
+            end = datetime.combine(day + timedelta(days=1) if qe <= qs else day, qe)
+            quiet.append((_minutes(event, start), _minutes(event, end)))
+    out = []
+    for c in people:
+        away = [(_minutes(event, b.start), _minutes(event, b.end)) for b in event.away if b.cook_id in (None, c.id)]
+        out.append(sch.Cook(c.id, c.name, away=sorted(away), quiet=quiet))
+    return out
+
+
 def build_event_schedule(event):
     ks = kitchen_settings(event.household_id)
     apps = appliances(event.household_id)
     sapps = [sch.Appliance(a.id, a.name, a.kind, a.capacity) for a in apps]
+    scooks = schedule_cooks(event, ks)
     sdishes = []
     by_mealie = {d.mealie_id: d for d in event.dishes if d.mealie_id and d.bringer == "host"}
     deps = {}
     for d in event.dishes:
-        steps = [sch.Step(s.id, s.label, s.minutes, s.kind, s.appliance_id, s.temp, s.hands_on) for s in d.steps if s.minutes > 0]
+        steps = [sch.Step(s.id, s.label, s.minutes, s.kind, s.appliance_id, s.temp, s.hands_on, s.stretch) for s in d.steps if s.minutes > 0]
         if not steps:
             continue
         hold = d.max_hold if d.max_hold is not None else ks.default_hold
@@ -369,7 +422,7 @@ def build_event_schedule(event):
         if ready is not None:
             hold = max(hold, MAKE_AHEAD_HOLD)
         sdishes.append(
-            sch.Dish(d.id, d.name, steps, ready_at=d.ready_at if ready is None else ready, max_hold=hold, earliest_start=_earliest_start(event, d))
+            sch.Dish(d.id, d.name, steps, ready_at=d.ready_at if ready is None else ready, max_hold=hold, earliest_start=_earliest_start(event, d), cook_id=d.cook_id)
         )
         if d.bringer == "host":
             for s in d.steps:
@@ -378,7 +431,7 @@ def build_event_schedule(event):
                     if comp is not None and comp is not d:
                         deps.setdefault(comp.id, []).append((d.id, s.id))
     settings = sch.Settings(ks.temp_tolerance, ks.minutes_per_10f, ks.preheat_minutes, ks.cooks)
-    schedule = sch.build_schedule(sdishes, sapps, settings, deps)
+    schedule = sch.build_schedule(sdishes, sapps, settings, deps, scooks)
     schedule.conflicts.extend(thaw_reminders(event, schedule))
     return schedule, {a.id: a for a in apps}
 
@@ -408,6 +461,7 @@ def run_of_show(event, schedule, apps_by_id):
     """Chronological list of things the cook does, for the day-of view."""
     dishes = {d.id: d for d in event.dishes}
     deg = kitchen_settings(event.household_id).deg
+    names = {c.id: c.name for c in cooks(event.household_id)}
     items = []
     for h in schedule.preheats:
         a = apps_by_id.get(h.appliance_id)
@@ -417,13 +471,15 @@ def run_of_show(event, schedule, apps_by_id):
         d = dishes.get(p.dish_id)
         a = apps_by_id.get(p.appliance_id) if p.appliance_id else None
         where = f" — {a.name}" + (f" at {p.temp}{deg}" if p.temp else "") if a else ""
+        who = names.get(p.cook_id)
         items.append(
             {
                 "at": p.start,
                 "end": p.end,
                 "kind": "hands" if p.hands_on else ("appliance" if a else "wait"),
-                "text": f"{d.name}: {p.label[:1].lower() + p.label[1:]} ({fmt_minutes(p.end - p.start)}){where}",
+                "text": (f"{who}: " if who else "") + f"{d.name}: {p.label[:1].lower() + p.label[1:]} ({fmt_minutes(p.end - p.start)}){where}",
                 "dish": d.id,
+                "cook": p.cook_id,
             }
         )
         stays = any(q.dish_id == p.dish_id and q.appliance_id == p.appliance_id and q.start == p.end for q in schedule.placements)

@@ -65,6 +65,11 @@ class Mealie:
     def tags(self):
         return self._req("GET", "/api/organizers/tags", params={"perPage": -1})["items"]
 
+    def household_members(self):
+        """People in the signed-in user's Mealie household."""
+        data = self._req("GET", "/api/households/members", params={"perPage": -1}) or {}
+        return data.get("items", data) if isinstance(data, dict) else data
+
     # --- shopping lists ---------------------------------------------------------
     def create_list(self, name):
         return self._req("POST", "/api/households/shopping/lists", json={"name": name})
@@ -339,10 +344,13 @@ def steps_from_recipe(recipe, overrides=None, unit="F"):
             "temp": temp,
             "hands_on": (kind is None and not (resting or long_wait or preheat)) or (kind == "burner" and minutes <= 15),
             "uses": sorted({refs[r["referenceId"]] for r in item.get("ingredientReferences") or [] if r.get("referenceId") in refs}),
+            # Chilling, brining, marinating, freezing can run longer than written (the time is a minimum), so
+            # earlier steps may move earlier. Rises and rests can't: over-proofed dough and cold meat suffer.
+            "stretch": kind is None and bool(_LONG_WAIT.search(work)) and not _RISE.search(work) and (not active or minutes >= PASSIVE_MIN_MINUTES),
         }
         o = overrides.get(str(n))
         if o and o.get("source_text") == step["source_text"]:
-            step.update({k: o[k] for k in ("label", "kind", "appliance_id", "temp", "hands_on") if k in o})
+            step.update({k: o[k] for k in ("label", "kind", "appliance_id", "temp", "hands_on", "stretch") if k in o})
         steps.append(step)
     return steps, [], untimed
 
