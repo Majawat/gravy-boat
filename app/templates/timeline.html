@@ -5,6 +5,16 @@
 {% if schedule.conflicts %}{{ conflicts(schedule.conflicts, dishes_by_id, ev) }}{% endif %}
 {% if untimed %}<p class="muted">No timing yet for: {% for d in untimed %}<a href="{{ url_for('host.dish', event_id=ev.id, dish_id=d.id) }}">{{ d.name }}</a>{{ ', ' if not loop.last }}{% endfor %}.</p>{% endif %}
 
+{% if before %}
+<h2 style="margin:.5rem 0">Before the day</h2>
+<div class="card">
+{% for day, items in before %}
+  <h3 style="margin:.4rem 0">{{ day.strftime('%A, %b %-d') }}</h3>
+  <ul class="show">{% for i in items %}<li class="k-{{ i.kind }}"><span class="t">{{ i.clock.strftime('%-I:%M %p').replace(':00 ', ' ') }}</span><span class="what">{{ i.text }}</span></li>{% endfor %}</ul>
+{% endfor %}
+</div>
+{% endif %}
+
 {% if dish_rows %}
 <div class="li-row">
   <h2 style="margin:.5rem 0">By dish</h2>

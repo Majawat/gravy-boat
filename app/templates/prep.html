@@ -3,6 +3,16 @@
 {% block event %}
 <div class="grid side">
   <div>
+    {% if before %}
+    <div class="card" style="margin-bottom:1rem">
+      <h2 style="margin-top:0">From the timeline</h2>
+      <p class="muted">Kitchen steps that land before the day: made-ahead dishes, brines, overnight chills. They move with the serve time; change them on each dish.</p>
+      {% for day, items in before %}
+        <h3 style="margin:.6rem 0 .2rem">{{ day.strftime('%A, %b %-d') }}</h3>
+        <ul class="show">{% for i in items %}<li class="k-{{ i.kind }}"><span class="t">{{ i.clock.strftime('%-I:%M %p').replace(':00 ', ' ') }}</span><span class="what">{{ i.text }}</span></li>{% endfor %}</ul>
+      {% endfor %}
+    </div>
+    {% endif %}
     {% for name, tasks in buckets %}
     <div class="card" style="margin-bottom:1rem">
       <h2 style="margin-top:0">{{ name }}</h2>
@@ -24,7 +34,7 @@
       </ul>
     </div>
     {% else %}
-    <div class="card"><p class="muted">No prep tasks yet. Add things like thawing the turkey, making the brine, baking pies the day before, or setting the table.</p></div>
+    {% if not before %}<div class="card"><p class="muted">No prep tasks yet. Add things like thawing the turkey, making the brine, baking pies the day before, or setting the table.</p></div>{% endif %}
     {% endfor %}
   </div>
   <div>

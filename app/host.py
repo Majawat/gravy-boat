@@ -148,7 +148,10 @@ def new_event():
 def overview(event_id):
     ev = _event(event_id)
     schedule, apps = svc.build_event_schedule(ev)
-    first = svc.when(ev, schedule.start) if schedule.placements else None
+    midnight = svc.day_start(ev)
+    on_day = [p.start for p in schedule.placements if p.start >= midnight] + [h.at for h in schedule.preheats if h.at >= midnight]
+    first = svc.when(ev, min(on_day)) if on_day else None
+    earliest = svc.clock(ev, schedule.start).date() if schedule.placements and schedule.start < midnight else None
     open_dishes = [d for d in ev.dishes if d.bringer == "open"]
     prep_open = [(t, ev.date - timedelta(days=t.days_before)) for t in ev.prep_tasks if not t.done]
     return render_template(
@@ -156,6 +159,7 @@ def overview(event_id):
         **_common(ev, "overview"),
         schedule=schedule,
         first=first,
+        earliest=earliest,
         open_dishes=open_dishes,
         prep_open=prep_open,
         guest_url=url_for("guest.landing", token=ev.guest_token, _external=True),
@@ -353,6 +357,7 @@ def menu(event_id):
         courses=COURSES,
         headcount=ev.headcount,
         scale=lambda d: svc.effective_scale(d, ev.headcount),
+        parents=svc.component_parents,
         status=svc.diet_status,
     )
 
@@ -470,6 +475,11 @@ def dish(event_id, dish_id):
             db.session.commit()
             flash(f"Removed {d.name}.", "ok")
             return _back(ev, "menu")
+        if request.form.get("action") == "resuggest" and d.mealie_id:
+            svc.resuggest_steps(d, g.mealie)
+            db.session.commit()
+            flash("Step settings guessed again from the Mealie text. Check them, then Save to remember them.", "ok")
+            return redirect(url_for("host.dish", event_id=ev.id, dish_id=d.id))
         _save_dish(ev, d, request.form, apps, all_flags)
         db.session.commit()
         flash("Saved." + (" Timing remembered for next time." if d.mealie_id else ""), "ok")
@@ -484,8 +494,10 @@ def dish(event_id, dish_id):
         courses=COURSES,
         all_flags=all_flags,
         auto_scale=svc.auto_scale(d, ev.headcount),
+        parents=svc.component_parents(d),
         status=svc.diet_status,
         heated=HEATED_KINDS,
+        make_ahead_days=[(n, (ev.date - timedelta(days=n))) for n in range(1, 8)],
     )
 
 
@@ -510,6 +522,9 @@ def _save_dish(ev, d, form, apps, all_flags):
     ready = _int(form.get("ready_at"), 0, -600, 600)
     d.ready_at = ready
     d.max_hold = _int(form.get("max_hold"), d.max_hold, 0, 600)
+    d.make_ahead_days = _int(form.get("make_ahead_days"), 0, 0, 7)
+    d.make_ahead_time = (_time(form.get("make_ahead_time")) or svc.MAKE_AHEAD_DEFAULT_TIME) if d.make_ahead_days else None
+    d.whole_batches = form.get("whole_batches") == "1"
     d.arrive_time = _time(form.get("arrive_time")) if form.get("arrive_time") else None
     if not d.mealie_id:
         d.diet = {str(f.id): form.get(f"diet_{f.id}") for f in all_flags if form.get(f"diet_{f.id}") in ("safe", "caution", "unsafe")}
@@ -537,7 +552,7 @@ def _save_dish(ev, d, form, apps, all_flags):
             kind = where
         temp = _int(form.get(f"s{i}_temp"), None, 40, 1000) if kind in HEATED_KINDS else None
         new_steps.append(
-            Step(seq=_int(form.get(f"s{i}_seq"), i), source_id=source, source_text=from_mealie[source].source_text if source else None, label=label[:80], minutes=minutes, kind=kind, appliance_id=app_id, temp=temp, hands_on=form.get(f"s{i}_hands") == "1")
+            Step(seq=_int(form.get(f"s{i}_seq"), i), source_id=source, source_text=from_mealie[source].source_text if source else None, label=label[:80], minutes=minutes, kind=kind, appliance_id=app_id, temp=temp, hands_on=form.get(f"s{i}_hands") == "1", uses=list(from_mealie[source].uses or []) if source else [])
         )
     new_steps.sort(key=lambda s: s.seq)
     for i, s in enumerate(new_steps):
@@ -549,11 +564,29 @@ def _save_dish(ev, d, form, apps, all_flags):
 # --- timeline ------------------------------------------------------------------
 
 
-def _timeline_ctx(ev):
-    schedule, apps = svc.build_event_schedule(ev)
+def _before_the_day(ev, show):
+    """Run-of-show items before the event day, grouped by date: make-ahead dishes, brines, overnight chills."""
+    out = {}
+    for i in show:
+        if i["clock"].date() < ev.date and i["kind"] != "serve":
+            out.setdefault(i["clock"].date(), []).append(i)
+    return sorted(out.items())
+
+
+def _timeline_ctx(ev, schedule=None, apps=None):
+    if schedule is None:
+        schedule, apps = svc.build_event_schedule(ev)
     show = svc.run_of_show(ev, schedule, apps)
-    start = (schedule.start // 60) * 60 if schedule.placements else -60
-    end = -(-schedule.end // 60) * 60 if schedule.placements else 0
+    # The charts cover the day itself; anything earlier is listed by day above them.
+    midnight = svc.day_start(ev)
+    # An overnight smoke that runs past midnight starts the chart at midnight; an overnight chill doesn't.
+    day_times = [t for p in schedule.placements if p.start >= midnight for t in (p.start, p.end)]
+    day_times += [midnight for p in schedule.placements if p.start < midnight < p.end and (p.appliance_id or p.hands_on)]
+    day_times += [h.at for h in schedule.preheats if h.at >= midnight]
+    first = max(midnight, min(day_times)) if day_times else -60
+    last = max(day_times + [0]) if day_times else 0
+    start = (first // 60) * 60
+    end = -(-last // 60) * 60
     end = max(end, start + 60)
     hours_span = (end - start) / 60
     every = 60 if hours_span <= 12 else 120 if hours_span <= 24 else 240
@@ -567,18 +600,20 @@ def _timeline_ctx(ev):
     dish_rows = []
     for d in ev.dishes:
         r = schedule.dishes.get(d.id)
-        if r and r.placements:
+        if r and r.placements and r.placements[-1].end > midnight:
             dish_rows.append((d, r))
     dish_rows.sort(key=lambda x: (x[1].start, x[0].id))
     app_rows = []
     for a in apps.values():
-        ps = [p for p in schedule.placements if p.appliance_id == a.id]
-        heats = [h for h in schedule.preheats if h.appliance_id == a.id]
+        ps = [p for p in schedule.placements if p.appliance_id == a.id and p.end > midnight]
+        heats = [h for h in schedule.preheats if h.appliance_id == a.id and h.at >= midnight]
         if ps or heats:
             app_rows.append((a, ps, heats))
+    day_show = [i for i in show if i["clock"].date() >= ev.date]
     return {
         "schedule": schedule,
-        "show": show,
+        "show": day_show,
+        "before": _before_the_day(ev, show),
         "span": (start, end),
         "hours": hours,
         "dish_rows": dish_rows,
@@ -601,6 +636,7 @@ def timeline(event_id):
 def today(event_id):
     ev = _event(event_id)
     ctx = _timeline_ctx(ev)
+    ctx["show"] = [i for _, items in ctx["before"] for i in items] + ctx["show"]  # kitchen mode works on prep days too
     return render_template("today.html", ev=ev, **ctx, serve=svc.serve_datetime(ev))
 
 
@@ -613,7 +649,7 @@ def print_view(event_id):
         "print.html",
         ev=ev,
         **ctx,
-        cookware=svc.cookware(ev),
+        cookware=svc.cookware(ev, ctx["schedule"]),
         buckets=_prep_buckets(ev),
         scale=lambda d: svc.effective_scale(d, ev.headcount),
     )
@@ -633,7 +669,8 @@ def _prep_buckets(ev):
 @login_required
 def prep(event_id):
     ev = _event(event_id)
-    return render_template("prep.html", **_common(ev, "prep"), buckets=_prep_buckets(ev))
+    ctx = _timeline_ctx(ev)
+    return render_template("prep.html", **_common(ev, "prep"), buckets=_prep_buckets(ev), before=ctx["before"])
 
 
 @bp.post("/events/<int:event_id>/prep")
@@ -711,10 +748,11 @@ def shopping_sync(event_id):
 def checklist(event_id):
     ev = _event(event_id)
     checked = {t.name for t in ev.tool_checks}
+    schedule, _ = svc.build_event_schedule(ev)
     return render_template(
         "checklist.html",
         **_common(ev, "checklist"),
-        cookware=svc.cookware(ev),
+        cookware=svc.cookware(ev, schedule),
         checked=checked,
         serveware=[d for d in ev.dishes if d.serveware],
     )

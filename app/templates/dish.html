@@ -67,6 +67,18 @@
       <div class="field"><label>Can wait up to (min)</label><input name="max_hold" value="{{ d.max_hold if d.max_hold is not none else '' }}" inputmode="numeric"></div>
     </div>
     <p class="muted">“Can wait” is how long the finished dish can sit covered before serving. More slack makes the oven easier to share.</p>
+    <div class="row" style="margin-top:.6rem">
+      <div class="field"><label>Make ahead</label>
+        <select name="make_ahead_days">
+          <option value="0" {{ 'selected' if not d.make_ahead_days }}>No, cook it on the day</option>
+          {% for n, day in make_ahead_days %}<option value="{{ n }}" {{ 'selected' if d.make_ahead_days == n }}>{{ day.strftime('%a %b %-d') }} ({{ n }} day{{ 's' if n != 1 }} before)</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field"><label>Done by</label><input type="time" step="900" name="make_ahead_time" value="{{ (d.make_ahead_time or none) and d.make_ahead_time.strftime('%H:%M') or '18:00' }}"></div>
+    </div>
+    <p class="muted">A made-ahead dish is finished on that day and stored, so it's off the day's timeline and never counted as held. “Ready” above only applies to dishes cooked on the day.</p>
+    {% if parents %}<p class="muted">Used in {{ parents|map(attribute='name')|join(', ') }}: it's timed to be ready before the step that needs it, and sized from how much they use.</p>{% endif %}
+    {% if d.mealie_id %}<div class="actions" style="margin-top:.4rem"><button name="action" value="resuggest" class="quiet small" formnovalidate>Guess step settings again from Mealie</button></div>{% endif %}
   </div>
 
   <div>
@@ -85,7 +97,8 @@
       {% if d.mealie_id %}
       <div class="field" style="margin-top:.85rem"><label>Batches</label>
         <input name="scale" value="{{ d.scale|qty if d.scale is not none else '' }}" placeholder="Auto: ×{{ auto_scale|qty }} for {{ ev.headcount|qty }} servings" inputmode="decimal">
-        <small>Multiplier for the shopping list. Leave blank to size it to the headcount.</small>
+        <small>Multiplier for the shopping list. Leave blank to size it {% if parents %}from the dishes that use it{% else %}to the headcount{% endif %}.</small>
+        <label style="font-weight:400;margin-top:.4rem;display:flex;gap:.5rem;align-items:center"><input type="checkbox" name="whole_batches" value="1" {{ 'checked' if d.whole_batches }}> Whole batches only (boxes, packages)</label>
       </div>
       {% endif %}
       <div class="field" style="margin-top:.85rem"><label>Serving dish / utensils</label><input name="serveware" value="{{ d.serveware }}" placeholder="Blue platter, carving fork"></div>

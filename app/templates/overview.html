@@ -6,7 +6,7 @@
 <div class="grid three">
   <div class="card"><div class="stat">{{ ev.people }}</div><div class="stat-label">coming ({{ ev.headcount|qty }} servings counting kids as half) · <a href="{{ url_for('host.guests', event_id=ev.id) }}">guests</a></div></div>
   <div class="card"><div class="stat">{{ ev.dishes|length }}</div><div class="stat-label">dishes{% if open_dishes %}, <b>{{ open_dishes|length }}</b> still need someone{% endif %} · <a href="{{ url_for('host.menu', event_id=ev.id) }}">menu</a></div></div>
-  <div class="card"><div class="stat">{{ first or '—' }}</div><div class="stat-label">first kitchen task on the day · <a href="{{ url_for('host.timeline', event_id=ev.id) }}">timeline</a></div></div>
+  <div class="card"><div class="stat">{{ first or '—' }}</div><div class="stat-label">first kitchen task on the day{% if earliest %}; prep starts {{ earliest.strftime('%a %b %-d') }}{% endif %} · <a href="{{ url_for('host.timeline', event_id=ev.id) }}">timeline</a></div></div>
 </div>
 
 {% if schedule.conflicts %}

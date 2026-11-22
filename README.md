@@ -23,16 +23,20 @@ headcount, and checklists for the table. Recipes stay in Mealie; Gravy Boat neve
   `Dairy-Modifiable`, `Dairy-Unsafe`…), so every dish shows whether it's safe for each person coming.
 - **A cooking timeline.** Tell it your kitchen: two ovens, five burners, a smoker, how many dishes fit in
   each. It schedules every step backward from serving time, keeps dishes with similar temperatures sharing
-  an oven, allows time to change temperature, adds preheats, and flags clashes and too many hands-on tasks
-  at once. Overnight cooks show which day they start.
+  an oven, allows time to change temperature, adds preheats, and treats your cooks as a limit like oven
+  racks. Overnight cooks and multi-day brines land on the right day, and anything before the day itself is
+  listed by date.
+- **Sub-recipes and make-ahead.** A stock or compound butter linked as an ingredient in Mealie is timed to
+  be ready before the step that uses it and sized from how much the parent needs. Mark a dish "make ahead"
+  to finish it on an earlier day and take it off the day's timeline.
 - **Kitchen mode.** A big-text, step-by-step list for your phone on the day, with "running late" buttons
   that shift everything.
-- **Prep countdown.** Tasks by days before (turkey thawing helper included). Recipe steps like
-  "refrigerate overnight" are added for you.
+- **Prep countdown.** Tasks by days before, plus every timeline step that falls before the day. A whole
+  turkey on the menu with no thawing task gets a reminder with the date it has to go in the fridge.
 - **Shopping list in Mealie.** One button builds the event's list in Mealie with host recipes scaled to
   the headcount (children count half). Updating it later only adjusts what Gravy Boat added.
 - **Checklists.** Table and serving ware with counts that follow the headcount, and cookware gathered from
-  each recipe's tools.
+  each recipe's tools, counted by how many are in use at once.
 - **Copy last year.** Start a new event from an old one: guests, menu, timings, prep and checklists.
 
 | Timeline | Menu |

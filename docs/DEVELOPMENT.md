@@ -39,13 +39,24 @@ timeline, shopping list or kitchen.
 one kitchen step; untimed steps are left off and reported. Mealie has no per-step appliance or temperature,
 so those are suggested from the step text and whatever the host sets is remembered per recipe, keyed by
 step number plus the start of the step's text. (Mealie regenerates step ids on every save, so ids can't be
-used as keys.) Long counter waits ("refrigerate overnight") become prep tasks.
+used as keys.) A step's Mealie summary, when it has one, is its label. Long counter waits ("refrigerate
+overnight", a two-day dry brine) stay in the chain as waiting steps, so earlier work lands on earlier days.
+Each step also records the sub-recipes its linked ingredients point to (`Step.uses`).
+
+**Sub-recipes.** A host dish whose Mealie recipe is linked as an ingredient of another host dish is a
+component: it's scheduled after its parents and must be ready before the parent step that uses it, and its
+automatic batches come from the parents' batches (units converted against the component's Mealie yield,
+or one batch per parent batch when units don't match). **Make ahead** sets a dish's ready time to a clock
+time N days before and lets it wait up to 12 hours, so it never counts as held.
 
 **Scheduler.** Each dish is a chain of steps ending when the dish is ready (relative to serving time).
 Dishes are placed longest-first; each may finish early by up to its "can wait" minutes to fit around
 others. Heated appliances can share only within a temperature tolerance, need time to change temperature
 between uses, and have a capacity. Past the allowed wait (+60 min) a dish is force-placed and reported as
-a clash, merged per appliance and time window. More hands-on tasks than cooks at once is a warning.
+a clash, merged per appliance and time window. Cooks are a resource like oven racks: a hands-on step only
+fits while fewer than that many hands-on steps run at once. Capacity counts what's in use at the same
+moment, so one dish's back-to-back steps take one rack, not two. A step whose appliance the kitchen
+doesn't have is warned about and then placed with no appliance, so the rest of the dish still books properly.
 
 **Dietary flags** map to Mealie tags (safe / caution / unsafe lists per flag). Tags shaped like
 `X-Safe`, `X-Modifiable`, `X-Unsafe` are offered as one-click flags.
