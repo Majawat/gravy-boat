@@ -266,23 +266,25 @@ body.today .show li { grid-template-columns: 8.5rem 1fr; padding: .7rem .4rem; }
 
 /* step editor */
 .steps { display: grid; gap: 0; }
-.step-row { display: grid; grid-template-columns: 3rem 2fr 5.5rem 2fr 5rem 4.5rem; gap: .5rem; align-items: center; padding: .4rem 0; border-bottom: 1px solid var(--line); }
+.step-row { display: grid; grid-template-columns: 3rem 2fr 5.5rem 2fr 5rem 4.5rem 5.5rem; gap: .5rem; align-items: center; padding: .4rem 0; border-bottom: 1px solid var(--line); }
 .step-row label { margin: 0; font-weight: 400; }
 .step-row .m { display: none; }
 .step-head { font-size: .82rem; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-2); font-weight: 600; }
-.step-row .c-hands { text-align: center; }
+.step-row .c-hands, .step-row .c-stretch { text-align: center; }
+.bar.k-away { background: repeating-linear-gradient(45deg, var(--line) 0 6px, transparent 6px 12px); color: var(--ink-2); border: 1px solid var(--line); }
 @media (max-width: 640px) {
   .step-head { display: none; }
   .step-row { grid-template-columns: 3rem 1fr 1fr; padding: .7rem 0; }
   .step-row .m { display: block; font-size: .78rem; color: var(--ink-2); }
-  .step-row .c-seq { grid-column: 1; grid-row: 1 / 5; align-self: start; }
+  .step-row .c-seq { grid-column: 1; grid-row: 1 / 6; align-self: start; }
   .step-row .c-label { grid-column: 2 / 4; grid-row: 1; }
   .step-row .c-min { grid-column: 2; grid-row: 2; }
   .step-row .c-temp { grid-column: 3; grid-row: 2; }
   .step-row .c-where { grid-column: 2 / 4; grid-row: 3; }
   .step-row .c-hands { grid-column: 2 / 4; grid-row: 4; }
-  .step-row .c-hands { display: flex; gap: .4rem; align-items: center; text-align: left; }
-  .step-row .c-hands .m { display: inline; font-size: .9rem; color: var(--ink); }
+  .step-row .c-stretch { grid-column: 2 / 4; grid-row: 5; }
+  .step-row .c-hands, .step-row .c-stretch { display: flex; gap: .4rem; align-items: center; text-align: left; }
+  .step-row .c-hands .m, .step-row .c-stretch .m { display: inline; font-size: .9rem; color: var(--ink); }
 }
 
 /* print */

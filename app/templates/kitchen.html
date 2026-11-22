@@ -3,7 +3,7 @@
 {% block title %}Kitchen · Gravy Boat{% endblock %}
 {% block content %}
 <h1>Your kitchen</h1>
-<p class="muted">Everything you can cook on. The timeline only books what's here and how many dishes each one holds at once. Shared by everyone in your Mealie household.</p>
+<p class="muted">Everything you can cook on, and who cooks. The timeline only books what's here and how many dishes each one holds at once. Shared by everyone in your Mealie household, and anyone in that household can sign in to Gravy Boat with their Mealie account and see and edit everything.</p>
 
 <div class="grid side">
   <div class="card pad-0">
@@ -49,12 +49,34 @@
       <p class="muted" style="margin-top:.6rem">“Holds” is how many dishes fit at once: oven racks, smoker grates. Burners hold one pot each.</p>
     </div>
 
+    <div class="card" style="margin-top:1rem" id="cooks">
+      <h2 style="margin-top:0">Cooks</h2>
+      <p class="muted">Each hands-on step goes to a cook who's home and free. Set when people are away on each event's timeline, and who makes a dish on the dish's page.</p>
+      <ul class="plain">
+        {% for c in cooks %}
+        <li><form method="post" class="row" style="align-items:center">{{ csrf() }}
+          <input type="hidden" name="id" value="{{ c.id }}"><input type="hidden" name="anchor" value="#cooks">
+          <div class="field grow"><input name="name" value="{{ c.name }}" aria-label="Name"></div>
+          <div class="actions"><button name="action" value="rename_cook" class="small ghost">Save</button><button name="action" value="delete_cook" class="small quiet">Remove</button></div>
+        </form></li>
+        {% else %}
+        <li class="muted">No named cooks yet; the timeline uses the cook count below.</li>
+        {% endfor %}
+      </ul>
+      <form method="post" class="row" style="margin-top:.6rem">{{ csrf() }}
+        <input type="hidden" name="action" value="add_cook"><input type="hidden" name="anchor" value="#cooks">
+        <div class="field grow"><input name="name" placeholder="Add a cook" aria-label="Cook's name" required></div>
+        <button class="ghost">Add</button>
+      </form>
+      <form method="post" style="margin-top:.4rem">{{ csrf() }}<input type="hidden" name="anchor" value="#cooks"><button name="action" value="household_cooks" class="small quiet">Add everyone in my Mealie household</button></form>
+    </div>
+
     <div class="card" style="margin-top:1rem">
       <h2 style="margin-top:0">How you cook</h2>
       <form method="post">{{ csrf() }}
         <input type="hidden" name="action" value="settings">
         <div class="row">
-          <div class="field"><label>Cooks</label><input name="cooks" value="{{ ks.cooks }}" inputmode="numeric"></div>
+          {% if not cooks %}<div class="field"><label>Cooks</label><input name="cooks" value="{{ ks.cooks }}" inputmode="numeric"></div>{% endif %}
           <div class="field"><label>Preheat (min)</label><input name="preheat_minutes" value="{{ ks.preheat_minutes }}" inputmode="numeric"></div>
         </div>
         <div class="row" style="margin-top:.85rem">
@@ -66,9 +88,14 @@
           <small>Switching converts every saved temperature.</small>
         </div>
         <div class="field"><label>Default “can wait” for new dishes (min)</label><input name="default_hold" value="{{ ks.default_hold }}" inputmode="numeric"></div>
+        <div class="row">
+          <div class="field"><label>Quiet from</label><input type="time" step="900" name="quiet_start" value="{{ (ks.quiet_start or quiet_default[0]).strftime('%H:%M') }}"></div>
+          <div class="field"><label>until</label><input type="time" step="900" name="quiet_end" value="{{ (ks.quiet_end or quiet_default[1]).strftime('%H:%M') }}"></div>
+        </div>
+        <small>No hands-on work is planned in quiet hours (you're asleep), but something already on the smoker keeps going.</small>
         <button>Save</button>
       </form>
-      <p class="muted" style="margin-top:.6rem">Two dishes can share an oven if their temperatures are this close. With more than one cook, more hands-on tasks can overlap before Gravy Boat warns you.</p>
+      <p class="muted" style="margin-top:.6rem">Two dishes can share an oven if their temperatures are this close.</p>
     </div>
   </div>
 </div>

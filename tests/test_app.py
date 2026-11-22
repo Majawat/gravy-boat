@@ -104,7 +104,7 @@ def test_recipe_times_come_from_mealie_and_host_settings_are_remembered(host, ap
         d = db.session.get(Dish, did)
         assert [(s.label, s.minutes, s.temp) for s in d.steps] == [("Bake covered", 45, 325)]
         rt = db.session.get(RecipeTiming, (HOUSEHOLD, "r-corn"))
-        assert rt.steps == [{"source_id": "2", "source_text": "bake for 45 minutes until set.", "label": "Bake covered", "kind": "oven", "appliance_id": None, "temp": 325, "hands_on": False}]
+        assert rt.steps == [{"source_id": "2", "source_text": "bake for 45 minutes until set.", "label": "Bake covered", "kind": "oven", "appliance_id": None, "temp": 325, "hands_on": False, "stretch": False}]
         assert rt.max_hold == 30
     # Mealie's time changes (and, like every Mealie save, the step ids are regenerated);
     # a refresh picks up the time and keeps the host's settings
@@ -707,3 +707,77 @@ def test_guessing_step_settings_again_forgets_saved_ones(host, app):
     with app.app_context():
         s = db.session.get(Dish, did).steps[0]
         assert (s.kind, s.temp) == ("oven", 375)
+
+
+# --- cooks and who's home -------------------------------------------------------
+
+
+def test_kitchen_offers_the_mealie_household_as_cooks(host, app):
+    html = host.get("/kitchen").data.decode()
+    assert "Taylor" in html and "Sam" in html and "anyone in that household can sign in" in html
+    host.post("/kitchen", data={"action": "household_cooks"})  # already there: nothing doubled
+    host.post("/kitchen", data={"action": "add_cook", "name": "Grandma"})
+    with app.app_context():
+        from app.models import Cook
+
+        assert [c.name for c in Cook.query.order_by(Cook.sort)] == ["Taylor", "Sam", "Grandma"]
+
+
+def test_away_times_and_assigned_cooks_shape_the_timeline(host, app):
+    from app.models import AwayBlock, Cook
+
+    setup_kitchen(host)
+    host.get("/kitchen")  # adds Taylor and Sam
+    eid = make_event(host)  # Fri Dec 25, serving at 2 PM
+    host.post(f"/events/{eid}/menu/recipe", data={"slug": "dinner-rolls"})
+    with app.app_context():
+        taylor, sam = (Cook.query.filter_by(name=n).one().id for n in ("Taylor", "Sam"))
+        did = Dish.query.filter_by(event_id=eid).one().id
+    # three weekday blocks from one form, and an overnight one that ends the next day
+    host.post(f"/events/{eid}/away", data={"action": "add", "cook_id": str(taylor), "from": "2026-12-21", "to": "2026-12-23", "start": "08:00", "end": "17:00", "label": "Work"})
+    host.post(f"/events/{eid}/away", data={"action": "add", "cook_id": "", "from": "2026-12-23", "start": "22:00", "end": "01:00", "label": "Party"})
+    with app.app_context():
+        blocks = AwayBlock.query.filter_by(event_id=eid).order_by(AwayBlock.start).all()
+        assert len(blocks) == 4 and blocks[0].label == "Work" and blocks[-1].cook_id is None
+        assert blocks[-1].end.strftime("%d %H:%M") == "24 01:00"
+    host.post(f"/events/{eid}/dishes/{did}", data={"ready_at": "0", "max_hold": "20", "cook_id": str(sam), "step_count": "1", "s0_source": "1", "s0_label": "Bake", "s0_where": "oven", "s0_temp": "375", "s0_hands": "1"})
+    with app.app_context():
+        assert db.session.get(Dish, did).cook_id == sam
+    html = host.get(f"/events/{eid}/timeline").data.decode()
+    assert "Who&#39;s home" in html or "Who's home" in html
+    assert "By cook" in html and "Sam: Dinner Rolls" in html
+    today = host.get(f"/events/{eid}/today?cook={taylor}").data.decode()
+    assert "Sam: Dinner Rolls" not in today  # Taylor's own list
+    assert "Sam: Dinner Rolls" in host.get(f"/events/{eid}/today?cook={sam}").data.decode()
+
+
+def test_removing_a_cook_frees_their_dishes_and_away_times(host, app):
+    from app.models import AwayBlock, Cook
+
+    host.get("/kitchen")
+    eid = make_event(host)
+    host.post(f"/events/{eid}/menu/recipe", data={"slug": "dinner-rolls"})
+    with app.app_context():
+        sam = Cook.query.filter_by(name="Sam").one().id
+        d = Dish.query.filter_by(event_id=eid).one()
+        d.cook_id = sam
+        db.session.commit()
+    host.post(f"/events/{eid}/away", data={"action": "add", "cook_id": str(sam), "from": "2026-12-24", "start": "09:00", "end": "10:00"})
+    host.post("/kitchen", data={"action": "delete_cook", "id": str(sam)})
+    with app.app_context():
+        assert Dish.query.filter_by(event_id=eid).one().cook_id is None
+        assert AwayBlock.query.count() == 0
+
+
+def test_guessing_again_on_a_typed_in_dish_changes_nothing(host, app):
+    eid = make_event(host)
+    host.post(f"/events/{eid}/menu/dish", data={"name": "Cookies", "bringer": "host"})
+    with app.app_context():
+        d = Dish.query.filter_by(name="Cookies").one()
+        d.notes, d.serveware = "Grandma's recipe", "Tin"
+        db.session.commit()
+        did = d.id
+    host.post(f"/events/{eid}/dishes/{did}", data={"action": "resuggest"})
+    with app.app_context():
+        d = db.session.get(Dish, did)
+        assert (d.notes, d.serveware) == ("Grandma's recipe", "Tin")

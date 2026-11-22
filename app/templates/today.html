@@ -19,6 +19,10 @@
     </form>
   </div>
 </div>
+{% if people %}<p class="actions" style="margin:.6rem 0">Show:
+  <a class="btn small {{ 'ghost' if who else '' }}" href="{{ url_for('host.today', event_id=ev.id) }}">Everyone</a>
+  {% for c in people %}<a class="btn small {{ '' if who == c.id else 'ghost' }}" href="{{ url_for('host.today', event_id=ev.id, cook=c.id) }}">{{ c.name }}</a>{% endfor %}
+</p>{% endif %}
 {% if schedule.conflicts %}<details style="margin:.8rem 0"><summary>{{ schedule.conflicts|length }} thing(s) don't fit</summary>{{ conflicts(schedule.conflicts, dishes_by_id, ev) }}</details>{% endif %}
 <ul class="show" id="show" data-day="{{ (show[0].clock.date() if show else serve.date()).isoformat() }}">
   {% for i in show %}

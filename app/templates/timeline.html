@@ -1,9 +1,34 @@
 {% extends "_event.html" %}
-{% from "_macros.html" import timeline_grid, legend, conflicts %}
+{% from "_macros.html" import timeline_grid, legend, conflicts, csrf %}
 {% block event %}
 {% if not apps %}<div class="flash warn">No appliances yet. <a href="{{ url_for('host.kitchen') }}">Set up your kitchen</a> so steps can be placed on ovens and burners.</div>{% endif %}
 {% if schedule.conflicts %}{{ conflicts(schedule.conflicts, dishes_by_id, ev) }}{% endif %}
 {% if untimed %}<p class="muted">No timing yet for: {% for d in untimed %}<a href="{{ url_for('host.dish', event_id=ev.id, dish_id=d.id) }}">{{ d.name }}</a>{{ ', ' if not loop.last }}{% endfor %}.</p>{% endif %}
+
+<details class="card" style="margin:.5rem 0" {{ 'open' if not ev.away }} id="away">
+  <summary><b>Who's home</b> <span class="muted">· {{ ev.away|length }} away time{{ 's' if ev.away|length != 1 }}</span></summary>
+  {% if ev.away %}
+  <ul class="plain" style="margin-top:.5rem">
+    {% for b in ev.away %}
+    <li class="li-row"><span><b>{{ b.cook.name if b.cook else 'Everyone' }}</b> away {{ b.start.strftime('%a %b %-d %-I:%M %p') }}–{{ b.end.strftime('%-I:%M %p') }}{% if b.label %} <span class="muted">· {{ b.label }}</span>{% endif %}</span>
+      <form method="post" action="{{ url_for('host.away_post', event_id=ev.id) }}" class="inline">{{ csrf() }}<input type="hidden" name="block_id" value="{{ b.id }}"><button name="action" value="delete" class="link">remove</button></form></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  <form method="post" action="{{ url_for('host.away_post', event_id=ev.id) }}" style="margin-top:.6rem">{{ csrf() }}
+    <input type="hidden" name="action" value="add">
+    <div class="row">
+      <div class="field"><label>Who</label><select name="cook_id"><option value="">Everyone</option>{% for c in people %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></div>
+      <div class="field"><label>From day</label><input type="date" name="from" required></div>
+      <div class="field"><label>to day</label><input type="date" name="to"></div>
+      <div class="field"><label>Away from</label><input type="time" step="900" name="start" required></div>
+      <div class="field"><label>until</label><input type="time" step="900" name="end" required></div>
+      <div class="field grow"><label>What</label><input name="label" placeholder="Work, a game…"></div>
+      <button class="ghost">Add</button>
+    </div>
+    <small>Pick a range of days for a weekly schedule; include travel time. Nothing hands-on is planned for someone while they're away, and nothing cooks on the grill, oven or stove while everyone is. {% if not people %}Name your cooks on the <a href="{{ url_for('host.kitchen') }}#cooks">Kitchen</a> page to plan per person.{% endif %}</small>
+  </form>
+</details>
 
 {% if before %}
 <h2 style="margin:.5rem 0">Before the day</h2>
@@ -25,6 +50,11 @@
 
 <h2>By appliance</h2>
 {{ timeline_grid(ev, span, hours, dish_rows, app_rows, apps, dishes_by_id, schedule, 'appliance') }}
+
+{% if cook_rows %}
+<h2>By cook</h2>
+{{ timeline_grid(ev, span, hours, dish_rows, app_rows, apps, dishes_by_id, schedule, 'cook', cook_rows) }}
+{% endif %}
 
 <h2>Step by step</h2>
 <div class="card">

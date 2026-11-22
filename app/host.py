@@ -10,7 +10,9 @@ from .models import (
     HEATED_KINDS,
     RSVPS,
     Appliance,
+    AwayBlock,
     ChecklistItem,
+    Cook,
     DietaryFlag,
     Dish,
     Event,
@@ -475,10 +477,11 @@ def dish(event_id, dish_id):
             db.session.commit()
             flash(f"Removed {d.name}.", "ok")
             return _back(ev, "menu")
-        if request.form.get("action") == "resuggest" and d.mealie_id:
-            svc.resuggest_steps(d, g.mealie)
-            db.session.commit()
-            flash("Step settings guessed again from the Mealie text. Check them, then Save to remember them.", "ok")
+        if request.form.get("action") == "resuggest":
+            if d.mealie_id:  # a dish typed in by name has nothing to guess from; never fall through to Save
+                svc.resuggest_steps(d, g.mealie)
+                db.session.commit()
+                flash("Step settings guessed again from the Mealie text. Check them, then Save to remember them.", "ok")
             return redirect(url_for("host.dish", event_id=ev.id, dish_id=d.id))
         _save_dish(ev, d, request.form, apps, all_flags)
         db.session.commit()
@@ -495,6 +498,7 @@ def dish(event_id, dish_id):
         all_flags=all_flags,
         auto_scale=svc.auto_scale(d, ev.headcount),
         parents=svc.component_parents(d),
+        cooks=svc.cooks(g.household_id),
         status=svc.diet_status,
         heated=HEATED_KINDS,
         make_ahead_days=[(n, (ev.date - timedelta(days=n))) for n in range(1, 8)],
@@ -525,6 +529,8 @@ def _save_dish(ev, d, form, apps, all_flags):
     d.make_ahead_days = _int(form.get("make_ahead_days"), 0, 0, 7)
     d.make_ahead_time = (_time(form.get("make_ahead_time")) or svc.MAKE_AHEAD_DEFAULT_TIME) if d.make_ahead_days else None
     d.whole_batches = form.get("whole_batches") == "1"
+    cook_id = _int(form.get("cook_id"))
+    d.cook_id = cook_id if cook_id and any(c.id == cook_id for c in svc.cooks(ev.household_id)) else None
     d.arrive_time = _time(form.get("arrive_time")) if form.get("arrive_time") else None
     if not d.mealie_id:
         d.diet = {str(f.id): form.get(f"diet_{f.id}") for f in all_flags if form.get(f"diet_{f.id}") in ("safe", "caution", "unsafe")}
@@ -552,7 +558,7 @@ def _save_dish(ev, d, form, apps, all_flags):
             kind = where
         temp = _int(form.get(f"s{i}_temp"), None, 40, 1000) if kind in HEATED_KINDS else None
         new_steps.append(
-            Step(seq=_int(form.get(f"s{i}_seq"), i), source_id=source, source_text=from_mealie[source].source_text if source else None, label=label[:80], minutes=minutes, kind=kind, appliance_id=app_id, temp=temp, hands_on=form.get(f"s{i}_hands") == "1", uses=list(from_mealie[source].uses or []) if source else [])
+            Step(seq=_int(form.get(f"s{i}_seq"), i), source_id=source, source_text=from_mealie[source].source_text if source else None, label=label[:80], minutes=minutes, kind=kind, appliance_id=app_id, temp=temp, hands_on=form.get(f"s{i}_hands") == "1", uses=list(from_mealie[source].uses or []) if source else [], stretch=form.get(f"s{i}_stretch") == "1")
         )
     new_steps.sort(key=lambda s: s.seq)
     for i, s in enumerate(new_steps):
@@ -610,10 +616,21 @@ def _timeline_ctx(ev, schedule=None, apps=None):
         if ps or heats:
             app_rows.append((a, ps, heats))
     day_show = [i for i in show if i["clock"].date() >= ev.date]
+    people = svc.cooks(ev.household_id)
+    scooks = {c.id: c for c in (svc.schedule_cooks(ev) or [])}
+    cook_rows = []
+    for c in people:
+        ps = [p for p in schedule.placements if p.cook_id == c.id and p.end > midnight]
+        sc = scooks.get(c.id)
+        off = [(max(a, start), min(b, end), "away") for a, b in (sc.away if sc else []) if a < end and b > start]
+        off += [(max(a, start), min(b, end), "quiet") for a, b in (sc.quiet if sc else []) if a < end and b > start]
+        cook_rows.append((c, ps, off))
     return {
         "schedule": schedule,
         "show": day_show,
         "before": _before_the_day(ev, show),
+        "cook_rows": cook_rows,
+        "people": people,
         "span": (start, end),
         "hours": hours,
         "dish_rows": dish_rows,
@@ -636,8 +653,14 @@ def timeline(event_id):
 def today(event_id):
     ev = _event(event_id)
     ctx = _timeline_ctx(ev)
-    ctx["show"] = [i for _, items in ctx["before"] for i in items] + ctx["show"]  # kitchen mode works on prep days too
-    return render_template("today.html", ev=ev, **ctx, serve=svc.serve_datetime(ev))
+    show = [i for _, items in ctx["before"] for i in items] + ctx["show"]  # kitchen mode works on prep days too
+    who = _int(request.args.get("cook"))
+    if who:
+        # this cook's own work, plus what happens to the dishes they touch (out of the oven, ready)
+        mine = {i["dish"] for i in show if i.get("cook") == who}
+        show = [i for i in show if i.get("cook") == who or (i.get("cook") is None and (i["dish"] in mine or i["kind"] in ("serve", "preheat")))]
+    ctx["show"] = show
+    return render_template("today.html", ev=ev, **ctx, serve=svc.serve_datetime(ev), who=who)
 
 
 @bp.get("/events/<int:event_id>/print")
@@ -707,6 +730,42 @@ def prep_post(event_id):
             db.session.delete(t)
     db.session.commit()
     return _back(ev, "prep")
+
+
+# --- who's home ----------------------------------------------------------------
+
+
+@bp.post("/events/<int:event_id>/away")
+@login_required
+def away_post(event_id):
+    from datetime import datetime
+
+    ev = _event(event_id)
+    action = request.form.get("action")
+    if action == "add":
+        first = _date(request.form.get("from"))
+        last = _date(request.form.get("to")) or first
+        t0, t1 = _time(request.form.get("start")), _time(request.form.get("end"))
+        cook_id = _int(request.form.get("cook_id"))
+        if cook_id and not any(c.id == cook_id for c in svc.cooks(g.household_id)):
+            abort(400)
+        if not first or not t0 or not t1 or last < first or (last - first).days > 31:
+            flash("An away time needs a day (or a range of days up to a month) and a start and end time.", "error")
+            return _back(ev, "timeline")
+        label = request.form.get("label", "").strip()[:80]
+        day = first
+        while day <= last:  # one block per day, so "Mon–Wed 8 AM–3 PM" is three blocks
+            start = datetime.combine(day, t0)
+            end = datetime.combine(day + timedelta(days=1) if t1 <= t0 else day, t1)  # 10 PM-2 AM ends the next day
+            db.session.add(AwayBlock(event=ev, cook_id=cook_id or None, start=start, end=end, label=label))
+            day += timedelta(days=1)
+    elif action == "delete":
+        b = db.session.get(AwayBlock, _int(request.form.get("block_id")))
+        if b is None or b.event_id != ev.id:
+            abort(404)
+        db.session.delete(b)
+    db.session.commit()
+    return _back(ev, "timeline")
 
 
 # --- shopping ------------------------------------------------------------------
@@ -808,14 +867,25 @@ def kitchen():
         if isinstance(e, MealieAuthError):
             raise
         tag_names = []
+    if not svc.cooks(g.household_id):
+        try:  # first visit: offer the Mealie household as the cooks
+            if svc.add_household_cooks(g.household_id, g.mealie):
+                db.session.commit()
+        except Exception as e:
+            from .mealie import MealieAuthError
+
+            if isinstance(e, MealieAuthError):
+                raise
     return render_template(
         "kitchen.html",
+        cooks=svc.cooks(g.household_id),
         apps=svc.appliances(g.household_id),
         ks=svc.kitchen_settings(g.household_id),
         flags=existing,
         tag_names=sorted(tag_names, key=str.lower),
         suggestions=svc.suggest_flags(tag_names, existing),
         presets=APPLIANCE_PRESETS,
+        quiet_default=(svc.QUIET_START, svc.QUIET_END),
     )
 
 
@@ -852,8 +922,28 @@ def kitchen_post():
         ks.preheat_minutes = _int(request.form.get("preheat_minutes"), ks.preheat_minutes, 0, 120)
         ks.default_hold = _int(request.form.get("default_hold"), ks.default_hold, 0, 600)
         ks.cooks = _int(request.form.get("cooks"), ks.cooks, 1, 20)
+        if "quiet_start" in request.form:
+            ks.quiet_start = _time(request.form.get("quiet_start")) or svc.QUIET_START
+            ks.quiet_end = _time(request.form.get("quiet_end")) or svc.QUIET_END
         if request.form.get("temp_unit") in ("F", "C"):
             svc.change_temp_unit(hid, request.form["temp_unit"])
+    elif action == "add_cook":
+        name = request.form.get("name", "").strip()
+        if name:
+            db.session.add(Cook(household_id=hid, name=name[:80], sort=len(svc.cooks(hid))))
+    elif action == "household_cooks":
+        added = svc.add_household_cooks(hid, g.mealie)
+        flash(f"Added {added} cook{'s' if added != 1 else ''} from your Mealie household." if added else "Everyone in your Mealie household is already a cook.", "ok")
+    elif action in ("rename_cook", "delete_cook"):
+        c = db.session.get(Cook, _int(request.form.get("id")))
+        if c is None or c.household_id != hid:
+            abort(404)
+        if action == "delete_cook":
+            Dish.query.filter_by(cook_id=c.id).update({"cook_id": None})
+            AwayBlock.query.filter_by(cook_id=c.id).delete()
+            db.session.delete(c)
+        else:
+            c.name = request.form.get("name", c.name).strip()[:80] or c.name
     elif action == "add_flag":
         name = request.form.get("name", "").strip()
         if name:

@@ -61,12 +61,38 @@ class KitchenSettings(db.Model):
     minutes_per_10f = db.Column(db.Float, nullable=False, default=1.0)
     preheat_minutes = db.Column(db.Integer, nullable=False, default=15)
     default_hold = db.Column(db.Integer, nullable=False, default=20)
-    cooks = db.Column(db.Integer, nullable=False, default=1)
+    cooks = db.Column(db.Integer, nullable=False, default=1)  # used only while no cooks are named
+    quiet_start = db.Column(db.Time)  # no hands-on work from here... (None = 10 PM)
+    quiet_end = db.Column(db.Time)  # ...until here (None = 6 AM)
     temp_unit = db.Column(db.String(1), nullable=False, default="F", server_default="F")  # F or C, for every temperature shown
 
     @property
     def deg(self):
         return "°" + self.temp_unit
+
+
+class Cook(db.Model):
+    """A person who cooks, shared across a household's events."""
+
+    id = db.Column(db.Integer, primary_key=True)
+    household_id = db.Column(db.String(64), index=True, nullable=False)
+    name = db.Column(db.String(80), nullable=False)
+    mealie_user_id = db.Column(db.String(64))  # set when added from the Mealie household
+    sort = db.Column(db.Integer, nullable=False, default=0)
+
+
+class AwayBlock(db.Model):
+    """A stretch of time a cook (or everyone, when cook_id is empty) can't be in the kitchen."""
+
+    id = db.Column(db.Integer, primary_key=True)
+    event_id = db.Column(db.Integer, db.ForeignKey("event.id", ondelete="CASCADE"), index=True, nullable=False)
+    cook_id = db.Column(db.Integer, db.ForeignKey("cook.id", ondelete="CASCADE"))
+    start = db.Column(db.DateTime, nullable=False)
+    end = db.Column(db.DateTime, nullable=False)
+    label = db.Column(db.String(80), nullable=False, default="")
+
+    event = db.relationship("Event", back_populates="away")
+    cook = db.relationship("Cook")
 
 
 class Appliance(db.Model):
@@ -124,6 +150,7 @@ class Event(db.Model):
         "ChecklistItem", back_populates="event", cascade="all, delete-orphan", order_by="ChecklistItem.sort, ChecklistItem.id"
     )
     tool_checks = db.relationship("ToolCheck", cascade="all, delete-orphan")
+    away = db.relationship("AwayBlock", back_populates="event", cascade="all, delete-orphan", order_by="AwayBlock.start, AwayBlock.id")
 
     @property
     def attending(self):
@@ -197,12 +224,16 @@ class Dish(db.Model):
     yield_unit = db.Column(db.String(60))  # e.g. "quarts"
     components = db.Column(JSONText, nullable=False, default=list)  # sub-recipes: [{recipe_id, qty, unit}]
     thaw_lbs = db.Column(db.Float)  # whole turkey weight found in the ingredients
+    # Who makes it; None = whoever's free. The database also has ON DELETE SET NULL (added inline by the migration,
+    # which SQLAlchemy can't reflect, so it isn't declared here); deleting a cook clears it in the app too.
+    cook_id = db.Column(db.Integer, db.ForeignKey("cook.id"))
     guest_added = db.Column(db.Boolean, nullable=False, default=False)
     synced_at = db.Column(db.DateTime)
     sort = db.Column(db.Integer, nullable=False, default=0)
 
     event = db.relationship("Event", back_populates="dishes")
     bringer_guest = db.relationship("Guest")
+    cook = db.relationship("Cook")
     steps = db.relationship("Step", back_populates="dish", cascade="all, delete-orphan", order_by="Step.seq, Step.id")
 
     @property
@@ -231,6 +262,7 @@ class Step(db.Model):
     temp = db.Column(db.Integer)
     hands_on = db.Column(db.Boolean, nullable=False, default=False)
     uses = db.Column(JSONText, nullable=False, default=list)  # Mealie ids of sub-recipes this step needs ready
+    stretch = db.Column(db.Boolean, nullable=False, default=False)  # a wait that can run longer (chill, brine)
 
     dish = db.relationship("Dish", back_populates="steps")
     appliance = db.relationship("Appliance")
@@ -246,6 +278,7 @@ class Step(db.Model):
             "temp": self.temp,
             "hands_on": self.hands_on,
             "uses": list(self.uses or []),
+            "stretch": self.stretch,
         }
 
 

@@ -53,8 +53,13 @@ time N days before and lets it wait up to 12 hours, so it never counts as held.
 Dishes are placed longest-first; each may finish early by up to its "can wait" minutes to fit around
 others. Heated appliances can share only within a temperature tolerance, need time to change temperature
 between uses, and have a capacity. Past the allowed wait (+60 min) a dish is force-placed and reported as
-a clash, merged per appliance and time window. Cooks are a resource like oven racks: a hands-on step only
-fits while fewer than that many hands-on steps run at once. Capacity counts what's in use at the same
+a clash, merged per appliance and time window. Cooks are people: each hands-on step is booked to one cook
+who is home (not in an away block or quiet hours) and free, preferring the cook of the dish's next step;
+a dish assigned to a cook only uses them. Grill, oven, smoker, air-fryer and burner steps need at least one
+cook home (asleep counts as home); fridge waits and slow/pressure cookers don't. A `stretch` step (chill,
+brine, marinate, freeze) may run up to 3 days longer, so earlier steps can move to when someone is home;
+the search is bounded per dish and falls back to laying the dish out with a warning. With no named cooks,
+the kitchen's cook count stands in for that many anonymous cooks who are always home. Capacity counts what's in use at the same
 moment, so one dish's back-to-back steps take one rack, not two. A step whose appliance the kitchen
 doesn't have is warned about and then placed with no appliance, so the rest of the dish still books properly.
 

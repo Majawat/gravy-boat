@@ -26,7 +26,7 @@
     {% endif %}
     {% if not apps %}<div class="flash warn">You haven't set up any appliances yet. <a href="{{ url_for('host.kitchen') }}">Add them</a> to choose where each step cooks.</div>{% endif %}
     <div class="steps" id="steps">
-      <div class="step-row step-head" aria-hidden="true"><span>#</span><span>Step</span><span>Minutes</span><span>Where</span><span>{{ deg }}</span><span>Hands-on</span></div>
+      <div class="step-row step-head" aria-hidden="true"><span>#</span><span>Step</span><span>Minutes</span><span>Where</span><span>{{ deg }}</span><span>Hands-on</span><span>Can wait longer</span></div>
       {% set rows = d.steps|list %}
       {% set extra = 0 if d.mealie_id else 2 %}
       {% for i in range(rows|length + extra) %}
@@ -49,6 +49,7 @@
         </label>
         <label class="c-temp"><span class="m">{{ deg }}</span><input name="s{{ i }}_temp" value="{{ s.temp if s and s.temp else '' }}" inputmode="numeric"></label>
         <label class="c-hands"><input type="checkbox" name="s{{ i }}_hands" value="1" {{ 'checked' if s and s.hands_on }}> <span class="m">Hands-on</span></label>
+        <label class="c-stretch" title="A wait that's fine to run longer (chilling, brining), so the steps before it can be done earlier"><input type="checkbox" name="s{{ i }}_stretch" value="1" {{ 'checked' if s and s.stretch }}> <span class="m">Can wait longer</span></label>
       </div>
       {% endfor %}
     </div>
@@ -91,6 +92,12 @@
           {% for gst in ev.guests %}<option value="guest:{{ gst.id }}" {{ 'selected' if d.bringer == 'guest' and d.bringer_guest_id == gst.id }}>{{ gst.name }}</option>{% endfor %}
         </select></div>
       </div>
+      {% if d.bringer == 'host' and cooks %}
+      <div class="field" style="margin-top:.85rem"><label>Who cooks it</label>
+        <select name="cook_id"><option value="">Whoever's free</option>{% for c in cooks %}<option value="{{ c.id }}" {{ 'selected' if d.cook_id == c.id }}>{{ c.name }}</option>{% endfor %}</select>
+        <small>Its hands-on steps go only to this cook.</small>
+      </div>
+      {% endif %}
       {% if d.bringer != 'host' %}
       <div class="field" style="margin-top:.85rem"><label>Arrives at</label><input type="time" step="300" name="arrive_time" value="{{ d.arrive_time.strftime('%H:%M') if d.arrive_time else '' }}"></div>
       {% endif %}

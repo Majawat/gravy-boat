@@ -27,11 +27,11 @@
   {%- if p.appliance_id -%}k-{{ p.kind or 'other' }}{%- elif p.hands_on -%}k-hands{%- else -%}k-wait{%- endif -%}
 {%- endmacro %}
 
-{% macro timeline_grid(ev, span, hours, dish_rows, app_rows, apps, dishes_by_id, schedule, by='dish') %}
+{% macro timeline_grid(ev, span, hours, dish_rows, app_rows, apps, dishes_by_id, schedule, by='dish', cook_rows=[]) %}
 <div class="tl" role="img" aria-label="Cooking timeline">
   <div class="tl-inner">
     <div class="tl-row tl-head">
-      <div class="tl-label">{{ 'Dish' if by == 'dish' else 'Appliance' }}</div>
+      <div class="tl-label">{{ {'dish': 'Dish', 'cook': 'Cook'}.get(by, 'Appliance') }}</div>
       <div class="tl-track">
         {% for m, t in hours %}<div class="tl-hour" style="left:{{ '%.3f'|format((m - span[0]) / ((span[1]-span[0]) or 1) * 100) }}%"><span>{{ t }}</span></div>{% endfor %}
       </div>
@@ -50,6 +50,21 @@
             </div>
           {% endfor %}
           {% if r.hold %}<div class="bar k-hold" style="{{ pos(r.finish, r.finish + r.hold, span) }}" title="Held {{ r.hold }} min">hold</div>{% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    {% elif by == 'cook' %}
+      {% for c, ps, off in cook_rows %}
+      <div class="tl-row">
+        <div class="tl-label" title="{{ c.name }}">{{ c.name }}</div>
+        <div class="tl-track">
+          {% for m, t in hours %}<div class="tl-hour" style="left:{{ '%.3f'|format((m - span[0]) / ((span[1]-span[0]) or 1) * 100) }}%"></div>{% endfor %}
+          {% if 0 >= span[0] and 0 <= span[1] %}<div class="tl-serve" style="{{ pos(0, 0, span) }}"></div>{% endif %}
+          {% for a, b, why in off %}<div class="bar k-away" style="{{ pos(a, b, span) }}" title="{{ 'Away' if why == 'away' else 'Quiet hours' }}">{{ 'away' if why == 'away' else 'quiet' }}</div>{% endfor %}
+          {% for p in ps %}
+            {% set dn = dishes_by_id[p.dish_id].name %}
+            <div class="bar k-hands" style="{{ pos(p.start, p.end, span) }}" title="{{ dn }} · {{ p.label }} · {{ (p.end - p.start)|dur }}">{{ dn }}</div>
+          {% endfor %}
         </div>
       </div>
       {% endfor %}
