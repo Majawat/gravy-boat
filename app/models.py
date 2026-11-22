@@ -190,6 +190,13 @@ class Dish(db.Model):
     ready_at = db.Column(db.Integer, nullable=False, default=0)
     max_hold = db.Column(db.Integer)
     arrive_time = db.Column(db.Time)
+    make_ahead_days = db.Column(db.Integer, nullable=False, default=0)  # 0 = cooked on the day
+    make_ahead_time = db.Column(db.Time)  # ready by this time on the make-ahead day (default 6 PM)
+    whole_batches = db.Column(db.Boolean, nullable=False, default=False)  # round automatic batches up to whole ones
+    yield_qty = db.Column(db.Float)  # recipe yield from Mealie, e.g. 1.5
+    yield_unit = db.Column(db.String(60))  # e.g. "quarts"
+    components = db.Column(JSONText, nullable=False, default=list)  # sub-recipes: [{recipe_id, qty, unit}]
+    thaw_lbs = db.Column(db.Float)  # whole turkey weight found in the ingredients
     guest_added = db.Column(db.Boolean, nullable=False, default=False)
     synced_at = db.Column(db.DateTime)
     sort = db.Column(db.Integer, nullable=False, default=0)
@@ -223,6 +230,7 @@ class Step(db.Model):
     appliance_id = db.Column(db.Integer, db.ForeignKey("appliance.id", ondelete="SET NULL"))
     temp = db.Column(db.Integer)
     hands_on = db.Column(db.Boolean, nullable=False, default=False)
+    uses = db.Column(JSONText, nullable=False, default=list)  # Mealie ids of sub-recipes this step needs ready
 
     dish = db.relationship("Dish", back_populates="steps")
     appliance = db.relationship("Appliance")
@@ -237,6 +245,7 @@ class Step(db.Model):
             "appliance_id": self.appliance_id,
             "temp": self.temp,
             "hands_on": self.hands_on,
+            "uses": list(self.uses or []),
         }
 
 

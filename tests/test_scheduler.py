@@ -112,14 +112,22 @@ def test_dessert_ready_after_serve():
     assert s.dishes[1].finish == 60 and s.end == 60
 
 
-def test_hands_on_overload_flags_window():
+def test_one_cook_does_hands_on_dishes_one_after_another():
     a = Dish(1, "Gravy", [Step(1, "Whisk", 20, kind="burner", hands_on=True)])
     b = Dish(2, "Mash", [Step(2, "Mash", 20, kind="burner", hands_on=True)])
     s = build_schedule([a, b], BURNERS, Settings(cooks=1))
-    hands = [c for c in s.conflicts if c.kind == "hands"]
-    assert len(hands) == 1 and hands[0].start == -20 and hands[0].end == 0
+    assert not [c for c in s.conflicts if c.kind == "hands"]
+    assert sorted([s.dishes[1].finish, s.dishes[2].finish]) == [-20, 0]  # one waits its 20 minutes
     s2 = build_schedule([a, b], BURNERS, Settings(cooks=2))
-    assert not [c for c in s2.conflicts if c.kind == "hands"]
+    assert s2.dishes[1].finish == s2.dishes[2].finish == 0
+
+
+def test_hands_on_overload_is_flagged_when_nothing_can_move():
+    from app.scheduler import Placement, _hands_on_overload
+
+    ps = [Placement(1, 1, "Whisk", -20, 0, "burner", 10, None, True), Placement(2, 2, "Mash", -20, 0, "burner", 11, None, True)]
+    hands = _hands_on_overload(ps, Settings(cooks=1))
+    assert len(hands) == 1 and hands[0].start == -20 and hands[0].end == 0
 
 
 def test_preheat_before_first_use_and_on_temperature_change():
@@ -169,3 +177,50 @@ def test_turning_the_oven_down_mid_dish_happens_when_the_next_step_starts():
     s = build_schedule([pie], [OVEN_SMALL])
     change = [h for h in s.preheats if h.change]
     assert len(change) == 1 and change[0].at == -45 and change[0].temp == 350
+
+
+def test_component_is_ready_before_the_step_that_uses_it():
+    turkey = Dish(1, "Turkey", [Step(11, "Butter it", 10, hands_on=True), Step(12, "Smoke", 120, kind="smoker", temp=325)])
+    butter = Dish(2, "Herb butter", [Step(21, "Whip", 10, hands_on=True)])
+    smoker = Appliance(5, "Smoker", "smoker")
+    s = build_schedule([butter, turkey], [smoker], deps={2: [(1, 11)]})
+    butter_step = s.dishes[1].placements[0]
+    assert s.dishes[2].finish <= butter_step.start  # butter done before the turkey gets buttered
+    assert s.dishes[2].finish == -130  # and no earlier than it has to be
+    assert not [c for c in s.conflicts if c.kind == "over_hold"]
+
+
+def test_cooks_are_a_resource_so_a_dish_that_can_wait_moves_aside():
+    turkey = Dish(1, "Turkey", [Step(1, "Smoke", 120, kind="smoker"), Step(3, "Carve", 20, hands_on=True)], max_hold=0)
+    gravy = Dish(2, "Gravy", [Step(2, "Whisk", 15, kind="burner", hands_on=True)], max_hold=30)
+    s = build_schedule([turkey, gravy], BURNERS + [Appliance(5, "Smoker", "smoker")], Settings(cooks=1))
+    assert s.dishes[1].finish == 0
+    assert s.dishes[2].finish <= -20  # made before the carving instead of at the same time
+    assert not [c for c in s.conflicts if c.kind == "hands"]
+
+
+def test_missing_appliance_warns_but_the_rest_still_books_properly():
+    stock = Dish(1, "Stock", [Step(1, "Pressure cook", 90, kind="pressure_cooker"), Step(2, "Reduce", 60, kind="burner")])
+    gravy = Dish(2, "Gravy", [Step(3, "Simmer", 60, kind="burner")])
+    one_burner = [Appliance(10, "Burner", "burner")]
+    s = build_schedule([stock, gravy], one_burner)
+    kinds = [c.kind for c in s.conflicts]
+    assert "no_appliance" in kinds and "clash" not in kinds  # warned, but nothing double-booked
+    reduce = s.dishes[1].placements[1]
+    simmer = s.dishes[2].placements[0]
+    assert reduce.end <= simmer.start or simmer.end <= reduce.start
+
+
+def test_back_to_back_steps_of_one_dish_take_one_rack():
+    sprouts = Dish(1, "Sprouts", [bake(1, 15, 410), bake(2, 10, 410)])
+    potatoes = Dish(2, "Potatoes", [bake(3, 25, 410)])
+    s = build_schedule([sprouts, potatoes], [OVEN])  # holds 2
+    assert s.dishes[1].finish == 0 and s.dishes[2].finish == 0
+    assert not s.conflicts
+
+
+def test_one_cooks_back_to_back_steps_count_once():
+    gravy = Dish(1, "Gravy", [Step(1, "Roux", 5, kind="burner", hands_on=True), Step(2, "Whisk", 5, kind="burner", hands_on=True)])
+    sprouts = Dish(2, "Sprouts", [Step(3, "Trim", 10, hands_on=True)])
+    s = build_schedule([gravy, sprouts], BURNERS, Settings(cooks=2))
+    assert s.dishes[1].finish == 0 and s.dishes[2].finish == 0  # two cooks, two tasks at a time

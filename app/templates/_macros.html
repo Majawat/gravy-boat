@@ -19,6 +19,7 @@
 
 {% macro pos(start, end, span) -%}
   {%- set total = (span[1] - span[0]) or 1 -%}
+  {%- set start = [start, span[0]]|max -%}{%- set end = [end, span[1]]|min -%}
   left:{{ '%.3f'|format((start - span[0]) / total * 100) }}%;width:{{ '%.3f'|format(((end - start) / total * 100) if end > start else 0.4) }}%
 {%- endmacro %}
 

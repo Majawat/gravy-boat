@@ -32,6 +32,13 @@
   </div>
 </div>
 
+{% if before %}
+<h2>Before the day</h2>
+{% for day, items in before %}<h3>{{ day.strftime('%A, %b %-d') }}</h3>
+<ul class="show">{% for i in items %}<li class="k-{{ i.kind }}"><span class="t">{{ i.clock.strftime('%-I:%M %p').replace(':00 ', ' ') }}</span><span class="what">☐ {{ i.text }}</span></li>{% endfor %}</ul>
+{% endfor %}
+{% endif %}
+
 {% if dish_rows %}
 <div class="page-break"></div>
 <h2>Timeline</h2>
@@ -50,7 +57,7 @@
   </div>
   <div>
     <h2>Cookware</h2>
-    <ul>{% for tool, dishes in cookware.items() %}<li>☐ {{ tool }}{% if dishes|length > 1 %} ×{{ dishes|length }}{% endif %} <small>({{ dishes|join(', ') }})</small></li>{% endfor %}</ul>
+    <ul>{% for tool, (count, dishes) in cookware.items() %}<li>☐ {{ tool }}{% if count > 1 %} ×{{ count }}{% endif %} <small>({{ dishes|join(', ') }})</small></li>{% endfor %}</ul>
   </div>
 </div>
 {% endblock %}

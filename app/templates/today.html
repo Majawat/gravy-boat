@@ -20,7 +20,7 @@
   </div>
 </div>
 {% if schedule.conflicts %}<details style="margin:.8rem 0"><summary>{{ schedule.conflicts|length }} thing(s) don't fit</summary>{{ conflicts(schedule.conflicts, dishes_by_id, ev) }}</details>{% endif %}
-<ul class="show" id="show" data-day="{{ serve.date().isoformat() }}">
+<ul class="show" id="show" data-day="{{ (show[0].clock.date() if show else serve.date()).isoformat() }}">
   {% for i in show %}
   <li class="k-{{ i.kind }}" data-at="{{ i.clock.isoformat() }}" data-end="{{ (i.clock.isoformat()) }}"><span class="t">{{ i.when }}</span><span class="what">{{ i.text }}</span></li>
   {% endfor %}

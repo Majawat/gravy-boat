@@ -14,7 +14,9 @@
             <div class="name"><a href="{{ url_for('host.dish', event_id=ev.id, dish_id=d.id) }}" style="color:inherit">{{ d.name }}</a> <span class="chip">{{ d.course }}</span></div>
             <div class="meta">
               {% if d.bringer == 'guest' %}{{ d.who }}{% if d.arrive_time %} · arrives {{ d.arrive_time.strftime('%-I:%M %p') }}{% endif %} · {% endif %}
-              {% if d.mealie_id %}×{{ scale(d)|qty }}{% if d.recipe_servings %} of {{ d.recipe_servings|qty }} servings{% endif %}{% if d.scale is none %} (auto){% endif %} · <a href="{{ recipe_base }}{{ d.mealie_slug }}" target="_blank" rel="noopener">recipe</a>{% else %}no recipe linked{% endif %}
+              {% set ps = parents(d) %}
+              {% if d.mealie_id %}×{{ scale(d)|qty }}{% if d.recipe_servings %} of {{ d.recipe_servings|qty }} servings{% endif %}{% if d.scale is none %} (auto{% if ps %}, for {{ ps|map(attribute='name')|join(', ') }}{% endif %}){% endif %} · <a href="{{ recipe_base }}{{ d.mealie_slug }}" target="_blank" rel="noopener">recipe</a>{% else %}no recipe linked{% endif %}
+              {% if d.make_ahead_days %} · made {{ d.make_ahead_days }} day{{ 's' if d.make_ahead_days != 1 }} ahead{% endif %}
               {% if d.steps %} · {{ d.steps|sum(attribute='minutes')|dur }} total{% else %} · <span style="color:var(--amber)">no timing yet</span>{% endif %}
             </div>
             <div style="margin-top:.25rem">{{ diet_chips(d, flags_active, status) }}</div>

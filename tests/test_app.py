@@ -458,10 +458,11 @@ def test_overnight_steps_show_the_day(host, app):
         did = Dish.query.filter_by(name="Brisket").one().id
     host.post(f"/events/{eid}/dishes/{did}", data={"ready_at": "0", "max_hold": "0", "step_count": "1", "s0_label": "Smoke", "s0_minutes": "1020", "s0_where": "smoker", "s0_temp": "250"})
     html = host.get(f"/events/{eid}/timeline").data.decode()
-    assert "Thu 9 PM" in html  # 17 hours before 2 PM Friday
+    # 17 hours before 2 PM Friday: listed under the day before, the chart covers Friday itself
+    assert "Before the day" in html and "Thursday, Dec 24" in html and ">9 PM<" in html
 
 
-def test_make_ahead_instructions_become_prep_tasks(host, app, monkeypatch):
+def test_long_waits_are_waiting_steps_not_prep_tasks(host, app, monkeypatch):
     from .conftest import RECIPES
 
     monkeypatch.setitem(RECIPES, "slush", {
@@ -471,8 +472,11 @@ def test_make_ahead_instructions_become_prep_tasks(host, app, monkeypatch):
     eid = make_event(host)
     host.post(f"/events/{eid}/menu/recipe", data={"slug": "slush"})
     with app.app_context():
-        assert [t.label for t in PrepTask.query.filter_by(event_id=eid)] == ["Slush Punch: Step 2: Freeze for at least 24 hours, until solid."]
-        assert [s.label for s in Dish.query.filter_by(name="Slush Punch").one().steps] == ["Step 1 · Prep"]
+        assert PrepTask.query.filter_by(event_id=eid).count() == 0
+        steps = Dish.query.filter_by(name="Slush Punch").one().steps
+        assert [(s.label, s.minutes, s.hands_on) for s in steps] == [("Step 1 · Prep", 5, True), ("Step 2 · Freeze", 1440, False)]
+    html = host.get(f"/events/{eid}/prep").data.decode()
+    assert "From the timeline" in html and "Slush Punch" in html
 
 
 def test_refresh_keeps_hand_entered_timing(host, app):
@@ -572,3 +576,134 @@ def test_redirect_targets_cannot_leave_the_site(client):
         client.post("/logout")
     r = client.post("/login", data={"username": "taylor", "password": "pw", "next": "/kitchen?x=1"})
     assert r.headers["Location"] == "/kitchen?x=1"
+
+
+def _thanksgiving_recipes(monkeypatch):
+    from .conftest import RECIPES
+
+    monkeypatch.setitem(RECIPES, "stock", {
+        "id": "r-stock", "slug": "stock", "name": "Turkey Stock", "recipeServings": 6, "recipeYieldQuantity": 1.5, "recipeYield": "quarts",
+        "tags": [], "tools": [{"name": "stock pot"}, {"name": "multi-cooker"}], "recipeCategory": [],
+        "recipeIngredient": [{"referenceId": "s-a", "food": {"name": "stock bones"}, "quantity": 5, "unit": {"name": "pound"}}],
+        "recipeInstructions": [
+            {"text": "Simmer the bones.", "durationSeconds": 3600, "ingredientReferences": [{"referenceId": "s-a"}]},
+            {"text": "Refrigerate overnight.", "durationSeconds": 43200},
+            {"text": "Skim the fat.", "durationSeconds": 300},
+        ],
+    })
+    monkeypatch.setitem(RECIPES, "gravy", {
+        "id": "r-gravy", "slug": "gravy", "name": "Turkey Gravy", "recipeServings": 16, "recipeYieldQuantity": 4, "recipeYield": "cups",
+        "tags": [], "tools": [{"name": "whisk"}, {"name": "saucepan (medium)"}], "recipeCategory": [],
+        "recipeIngredient": [
+            {"referenceId": "g-a", "food": {"name": "butter"}, "quantity": 6, "unit": {"name": "tablespoon"}},
+            {"referenceId": "g-b", "referencedRecipe": {"id": "r-stock", "name": "Turkey Stock"}, "quantity": 1, "unit": {"name": "quart"}},
+        ],
+        "recipeInstructions": [
+            {"text": "Make a roux in a saucepan.", "durationSeconds": 300, "ingredientReferences": [{"referenceId": "g-a"}]},
+            {"text": "Whisk in the stock and simmer.", "durationSeconds": 900, "ingredientReferences": [{"referenceId": "g-b"}]},
+        ],
+    })
+    monkeypatch.setitem(RECIPES, "turkey", {
+        "id": "r-turkey", "slug": "turkey", "name": "Smoked Turkey", "recipeServings": 12, "tags": [{"name": "turkey"}],
+        "tools": [{"name": "knife"}, {"name": "pellet smoker"}], "recipeCategory": [],
+        "recipeIngredient": [{"referenceId": "t-a", "food": {"name": "whole turkey"}, "quantity": 1, "note": "12 to 13 pounds"}],
+        "recipeInstructions": [{"text": "Smoke the turkey on the pellet grill.", "durationSeconds": 9000, "ingredientReferences": [{"referenceId": "t-a"}]}],
+    })
+
+
+def test_sub_recipe_is_sized_from_its_parent_and_ready_before_it(host, app, monkeypatch):
+    _thanksgiving_recipes(monkeypatch)
+    setup_kitchen(host)
+    eid = make_event(host)
+    for slug in ("gravy", "stock"):
+        host.post(f"/events/{eid}/menu/recipe", data={"slug": slug})
+    with app.app_context():
+        from app import services as svc
+        from app.models import Event
+
+        ev = db.session.get(Event, eid)
+        gravy, stock = (Dish.query.filter_by(event_id=eid, name=n).one() for n in ("Turkey Gravy", "Turkey Stock"))
+        gravy.scale = 1.0
+        db.session.commit()
+        # a gravy batch needs 1 quart; the stock makes 1.5 quarts -> 2/3 of a batch, rounded up to a whole one
+        assert svc.effective_scale(stock, ev.headcount) == 1.0
+        gravy.scale = 2.0
+        assert svc.effective_scale(stock, ev.headcount) == 1.5
+        gravy.scale = 1.0
+        schedule, _ = svc.build_event_schedule(ev)
+        whisk = next(p for p in schedule.dishes[gravy.id].placements if p.label.endswith("Simmer"))
+        assert schedule.dishes[stock.id].finish <= whisk.start
+    html = host.get(f"/events/{eid}/menu").data.decode()
+    assert "for Turkey Gravy" in html
+
+
+def test_whole_batches_round_up(host, app):
+    eid = make_event(host)
+    host.post(f"/events/{eid}/menu/recipe", data={"slug": "southern-corn-casserole"})
+    with app.app_context():
+        from app import services as svc
+
+        d = Dish.query.filter_by(event_id=eid).one()
+        assert svc.auto_scale(d, 10) == 1.5  # 10 people, recipe serves 8
+        d.whole_batches = True
+        assert svc.auto_scale(d, 10) == 2.0
+
+
+def test_make_ahead_dish_leaves_the_day(host, app):
+    setup_kitchen(host)
+    eid = make_event(host)  # Fri Dec 25 at 2 PM
+    host.post(f"/events/{eid}/menu/recipe", data={"slug": "dinner-rolls"})
+    with app.app_context():
+        did = Dish.query.filter_by(event_id=eid).one().id
+    host.post(f"/events/{eid}/dishes/{did}", data={"ready_at": "0", "max_hold": "20", "make_ahead_days": "1", "make_ahead_time": "17:00", "step_count": "1", "s0_source": "1", "s0_label": "Bake", "s0_where": "oven", "s0_temp": "375"})
+    with app.app_context():
+        from app import services as svc
+        from app.models import Event
+
+        ev = db.session.get(Event, eid)
+        d = db.session.get(Dish, did)
+        assert d.make_ahead_days == 1
+        schedule, _ = svc.build_event_schedule(ev)
+        r = schedule.dishes[did]
+        assert svc.clock(ev, r.finish).strftime("%a %H:%M") == "Thu 17:00"
+        assert not [c for c in schedule.conflicts if c.kind == "over_hold"]
+    html = host.get(f"/events/{eid}/timeline").data.decode()
+    assert "Before the day" in html and "Thursday, Dec 24" in html
+    assert "made 1 day ahead" in host.get(f"/events/{eid}/menu").data.decode()
+
+
+def test_cookware_counts_what_is_in_use_at_once_and_skips_appliances(host, app, monkeypatch):
+    _thanksgiving_recipes(monkeypatch)
+    setup_kitchen(host)
+    eid = make_event(host)
+    for slug in ("gravy", "stock", "turkey"):
+        host.post(f"/events/{eid}/menu/recipe", data={"slug": slug})
+    html = host.get(f"/events/{eid}/checklist").data.decode()
+    assert "pellet smoker" not in html and "multi-cooker" not in html
+    assert "whisk" in html and "×" not in html.split("Serving dishes")[0].split("Cookware")[1]
+
+
+def test_whole_turkey_without_a_thaw_task_gets_a_reminder(host, app, monkeypatch):
+    _thanksgiving_recipes(monkeypatch)
+    setup_kitchen(host)
+    eid = make_event(host)
+    host.post(f"/events/{eid}/menu/recipe", data={"slug": "turkey"})
+    html = host.get(f"/events/{eid}").data.decode()
+    assert "13 lb frozen turkey needs about 4 days" in html and "Mon Dec 21" in html
+    host.post(f"/events/{eid}/prep", data={"action": "thaw", "pounds": "13", "extra": "0"})
+    assert "frozen turkey needs" not in host.get(f"/events/{eid}").data.decode()
+
+
+def test_guessing_step_settings_again_forgets_saved_ones(host, app):
+    setup_kitchen(host)
+    eid = make_event(host)
+    host.post(f"/events/{eid}/menu/recipe", data={"slug": "dinner-rolls"})
+    with app.app_context():
+        did = Dish.query.filter_by(event_id=eid).one().id
+    host.post(f"/events/{eid}/dishes/{did}", data={"ready_at": "0", "max_hold": "20", "step_count": "1", "s0_source": "1", "s0_label": "Bake", "s0_where": "burner", "s0_temp": ""})
+    with app.app_context():
+        assert db.session.get(Dish, did).steps[0].kind == "burner"
+    host.post(f"/events/{eid}/dishes/{did}", data={"action": "resuggest"})
+    with app.app_context():
+        s = db.session.get(Dish, did).steps[0]
+        assert (s.kind, s.temp) == ("oven", 375)

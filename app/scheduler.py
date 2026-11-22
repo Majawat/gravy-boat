@@ -7,11 +7,12 @@ for up to its max_hold minutes, which is the slack the scheduler uses to fit dis
 around each other on shared appliances.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 HEAT_KINDS = {"oven", "smoker", "grill", "air_fryer"}
 SEARCH_STEP = 5
 OVERFLOW_HOLD = 60  # past max_hold + this, a clash is more useful than a dish held for hours
+HANDS = "hands"  # booking key for the cooks, who are a resource like an oven's racks
 
 
 @dataclass
@@ -107,9 +108,16 @@ def _gap_needed(t1, t2, settings):
     return int(round(abs(t1 - t2) / 10 * settings.minutes_per_10f))
 
 
+def _most_at_once(others, start, end):
+    """The most of `others` in use at the same moment between start and end. A dish's back-to-back steps
+    (roast 15 min, then roast 10 more) are one dish in the oven, not two."""
+    points = [start] + [p.start for p in others if start < p.start < end]
+    return max((sum(1 for p in others if p.start <= t < p.end) for t in points), default=0)
+
+
 def _fits(appliance, start, end, temp, booked, settings, dish_id=None):
     """Can a step occupy `appliance` from start to end at `temp`, given what is booked?"""
-    overlapping = 0
+    overlapping = []
     for p in booked.get(appliance.id, []):
         # a dish's own consecutive steps can change temperature in place (turn the oven down with it inside)
         same_dish = p.dish_id == dish_id and (p.start == end or p.end == start)
@@ -118,8 +126,8 @@ def _fits(appliance, start, end, temp, booked, settings, dish_id=None):
             if gap:
                 return False  # different temperature too close in time
             if start < p.end and p.start < end:
-                overlapping += 1
-    return overlapping < appliance.capacity
+                overlapping.append(p)
+    return _most_at_once(overlapping, start, end) < appliance.capacity
 
 
 def _candidates(step, appliances):
@@ -150,6 +158,16 @@ def _try_place(dish, finish, appliances, booked, settings, prefer=None):
             # book tentatively so later (earlier-in-time) steps of this dish see it
             booked.setdefault(chosen.id, []).append(
                 Placement(dish.id, step.id, step.label, start, end, step.kind, chosen.id, step.temp, step.hands_on)
+            )
+        if step.hands_on and settings.cooks:
+            busy = _most_at_once([p for p in booked.get(HANDS, []) if p.start < end and start < p.end], start, end)
+            if busy >= settings.cooks:
+                _unbook(placements, booked)
+                if appliance_id is not None:
+                    _unbook([Placement(dish.id, step.id, step.label, start, end, step.kind, appliance_id, step.temp, step.hands_on)], booked)
+                return None
+            booked.setdefault(HANDS, []).append(
+                Placement(dish.id, step.id, step.label, start, end, step.kind, appliance_id, step.temp, step.hands_on)
             )
         placements.append(
             Placement(dish.id, step.id, step.label, start, end, step.kind, appliance_id, step.temp, step.hands_on)
@@ -182,13 +200,12 @@ def _place_preferring_one_appliance(dish, finish, appliances, booked, settings):
 
 def _unbook(placements, booked):
     for p in placements:
-        if p.appliance_id is None:
-            continue
-        lst = booked.get(p.appliance_id, [])
-        for i, b in enumerate(lst):
-            if b.dish_id == p.dish_id and b.step_id == p.step_id and b.start == p.start:
-                del lst[i]
-                break
+        for key in ([p.appliance_id] if p.appliance_id is not None else []) + ([HANDS] if p.hands_on else []):
+            lst = booked.get(key, [])
+            for i, b in enumerate(lst):
+                if b.dish_id == p.dish_id and b.step_id == p.step_id and b.start == p.start:
+                    del lst[i]
+                    break
 
 
 def _force_place(dish, finish, appliances):
@@ -212,14 +229,42 @@ def _priority(dish):
     return (not pinned, -busy, dish.ready_at, dish.id)
 
 
-def build_schedule(dishes, appliances, settings=None):
+def _ordered(dishes, deps):
+    """Priority order, except a component (a stock, a compound butter) waits until every dish that
+    needs it is placed, so it can be timed to be ready before the step that uses it."""
+    pending = sorted(dishes, key=_priority)
+    ids = {d.id for d in dishes}
+    done: set[int] = set()
+    out = []
+    while pending:
+        pick = next(
+            (d for d in pending if all(pid in done or pid not in ids for pid, _ in deps.get(d.id, []))),
+            pending[0],  # a cycle: just go in priority order
+        )
+        pending.remove(pick)
+        done.add(pick.id)
+        out.append(pick)
+    return out
+
+
+def build_schedule(dishes, appliances, settings=None, deps=None):
+    """deps: {component dish id: [(dish id, step id that uses it)]}."""
     settings = settings or Settings()
+    deps = deps or {}
     booked: dict[int, list[Placement]] = {}
     results: dict[int, DishResult] = {}
     conflicts: list[Conflict] = []
     by_id = {a.id: a for a in appliances}
 
-    for dish in sorted(dishes, key=_priority):
+    for dish in _ordered(dishes, deps):
+        needed = [
+            p.start
+            for pid, sid in deps.get(dish.id, [])
+            for p in (results[pid].placements if pid in results else [])
+            if p.step_id == sid
+        ]
+        if needed and min(needed) < dish.ready_at:
+            dish = replace(dish, ready_at=min(needed))
         result = DishResult(dish.id)
         results[dish.id] = result
         if not dish.steps:
@@ -232,11 +277,14 @@ def build_schedule(dishes, appliances, settings=None):
             s = missing[0]
             what = s.kind.replace("_", " ") if s.kind else "the chosen appliance"
             conflicts.append(Conflict("no_appliance", f"{dish.name}: your kitchen has no {what}.", [dish.id]))
+            # Warn, but still plan the dish properly: the step without an appliance just takes its time.
+            gone = {m.id for m in missing}
+            dish = replace(dish, steps=[replace(s, kind=None, appliance_id=None) if s.id in gone else s for s in dish.steps])
 
         placed = None
         hold = 0
         limit = dish.max_hold + OVERFLOW_HOLD
-        while hold <= limit and not missing:
+        while hold <= limit:
             placed = _place_preferring_one_appliance(dish, dish.ready_at - hold, appliances, booked, settings)
             if placed is not None:
                 if dish.earliest_start is not None and placed[0].start < dish.earliest_start:
@@ -259,7 +307,7 @@ def build_schedule(dishes, appliances, settings=None):
                         dish.earliest_start,
                     )
                 )
-            elif not missing:
+            else:
                 conflicts.append(
                     Conflict(
                         "clash",
@@ -310,7 +358,7 @@ def _shared_appliance_clashes(placements, by_id, settings):
             b for b in placements
             if b is not a and b.appliance_id == a.appliance_id and b.start < a.end and a.start < b.end
         ]
-        over_capacity = len(overlapping) + 1 > appliance.capacity
+        over_capacity = _most_at_once(overlapping, a.start, a.end) + 1 > appliance.capacity
         temp_clash = appliance.kind in HEAT_KINDS and any(_gap_needed(a.temp, b.temp, settings) for b in overlapping)
         if over_capacity or temp_clash:
 

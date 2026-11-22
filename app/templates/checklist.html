@@ -32,15 +32,15 @@
 
   <div class="card">
     <h2 style="margin-top:0">Cookware</h2>
-    <p class="muted">From the Tools on each host recipe in Mealie.</p>
+    <p class="muted">From the Tools on each host recipe in Mealie. Counts are how many are in use at once on the timeline; appliances are on the <a href="{{ url_for('host.kitchen') }}">Kitchen</a> page.</p>
     <ul class="plain">
-      {% for tool, dishes in cookware.items() %}
+      {% for tool, (count, dishes) in cookware.items() %}
       <li>
         <form method="post" class="inline">{{ csrf() }}
           <input type="hidden" name="action" value="tool"><input type="hidden" name="name" value="{{ tool }}">
           <label style="display:flex;gap:.6rem;align-items:flex-start;font-weight:400;margin:0;cursor:pointer">
             <input type="checkbox" {{ 'checked' if tool in checked }} onchange="this.form.submit()" style="margin-top:.3rem">
-            <span><span class="{{ 'done' if tool in checked }}">{{ tool }}{% if dishes|length > 1 %} <b>×{{ dishes|length }}</b>{% endif %}</span><br><small>{{ dishes|join(', ') }}</small></span>
+            <span><span class="{{ 'done' if tool in checked }}">{{ tool }}{% if count > 1 %} <b>×{{ count }}</b>{% endif %}</span><br><small>{{ dishes|join(', ') }}</small></span>
           </label>
         </form>
       </li>
